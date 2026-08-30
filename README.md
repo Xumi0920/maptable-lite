@@ -86,6 +86,9 @@ npm run preview    # 本地预览构建产物
    - **Environment variables**: 添加 `VITE_AMAP_KEY` 和 `VITE_AMAP_SECURITY_CODE`
 4. 部署完成即可在线访问
 
+> ⚠️ **重要**：高德 key（`VITE_AMAP_KEY` / `VITE_AMAP_SECURITY_CODE`）**必须在 Cloudflare 的环境变量里配置**，不能写死在源码里。因为 `.env` 已被 .gitignore、不会推上 git，所以云端这个配置是必须的——少了它线上地图会显示"需配置高德Key"。
+> 建议在 Cloudflare 控制台把这两个环境变量设为 **Encrypt**（加密存储）。
+
 方法二：**Wrangler CLI**（本地直传）
 
 ```bash

@@ -1,0 +1,21 @@
+# Cloudflare Pages 部署配置（参考）
+#
+# 推荐用法（GitHub 直连，最省心）：Cloudflare Dashboard → Workers & Pages → Create → Connect to Git
+#   选中 Xumi0920/maptable-lite 仓库，构建命令 npm run build，输出目录 dist，
+#   并在"构建环境变量"里配置 VITE_AMAP_KEY / VITE_AMAP_SECURITY_CODE（才能让地图加载）
+#
+# wrangler CLI 部署（需先 wrangler login）：
+#   npm run build
+#   npx wrangler pages deploy dist --project-name maptable-lite
+#
+# ⚠️ 关键：高德 key 一定通过 Cloudflare 的"环境变量"注入（VITE_AMAP_KEY / VITE_AMAP_SECURITY_CODE），
+#    绝不能写死在源码里。.env 已被 gitignore，不会推上 git，所以云端必须单独配置。
+#    本文件主要用于 CI/本地参考；GitHub 直连时以 Dashboard 里的构建参数为准。
+
+name = "maptable-lite"
+compatibility_date = "2026-01-01"
+
+[pages]
+build_command = "npm run build"
+# Cloudflare Pages 输出目录（Wrangler 4.x 字段名）
+pages_build_output_dir = "dist"
