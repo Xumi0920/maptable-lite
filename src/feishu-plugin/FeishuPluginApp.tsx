@@ -65,13 +65,19 @@ export default function FeishuPluginApp() {
   const regionTextFields = useMemo(() => dataSet ? dataSet.fields.filter((f) => f.type === 'text' || f.type === 'select') : [], [dataSet]);
   const regionNumFields = useMemo(() => dataSet ? dataSet.fields.filter((f) => f.type === 'number') : [], [dataSet]);
 
-  // 拉取多维表格下所有表
+  // 拉取多维表格下所有表（用 getTableList 拿标准数据表实例，确保 id 是标准表 id）
   const loadTableList = useMemo(() => async () => {
     setDebug('正在获取表列表...');
-    const metas = await bitable.base.getTableMetaList();
-    const list: TableMeta[] = (metas || []).map((m: any) => ({ id: m.id, name: m.name }));
+    const tables = await bitable.base.getTableList();
+    const list: TableMeta[] = await Promise.all(
+      (tables || []).map(async (t: any) => {
+        let name = '';
+        try { name = await t.getName(); } catch { /* ignore */ }
+        return { id: t.id, name: name || t.id };
+      })
+    );
     setTables(list);
-    setDebug(`表列表 ${list.length} 张`);
+    setDebug(`表列表 ${list.length} 张（id 前4位: ${list[0]?.id?.slice(0, 4) || '无'}）`);
     return list;
   }, []);
 
