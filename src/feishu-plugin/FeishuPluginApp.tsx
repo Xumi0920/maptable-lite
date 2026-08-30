@@ -28,6 +28,7 @@ export default function FeishuPluginApp() {
   const [dataSet, setDataSet] = useState<DataSet | null>(null);
   const [loading, setLoading] = useState(true);
   const [fields, setFields] = useState<BitableFieldLike[]>([]);
+  const [fieldError, setFieldError] = useState('');
   const [tableId, setTableId] = useState('');
   const [layer, setLayer] = useState<LayerType>('scatter');
   const [selection, setSelection] = useState<Selection>({ rowIds: [] });
@@ -63,11 +64,15 @@ export default function FeishuPluginApp() {
       // 配置模式：只读字段，用于选坐标字段
       (async () => {
         try {
+          setFieldError('');
           const table = await bitable.base.getActiveTable();
           const fList: BitableFieldLike[] = await Promise.all(((await table.getFieldList()) || []).map((f: any) => bitableFieldToLike(f)));
           setFields(fList);
           setLoading(false);
-        } catch (e) {
+        } catch (e: any) {
+          // 暴露真实错误（配置模式下 getActiveTable/getFieldList 可能不可用）
+          setFieldError(String(e?.message || e));
+          setFields([]);
           setLoading(false);
         }
       })();
@@ -99,21 +104,43 @@ export default function FeishuPluginApp() {
     return (
       <main style={{ backgroundColor: bgColor, padding: 16, fontFamily: 'inherit', minHeight: '100vh', color: theme === 'dark' ? '#e5e6eb' : '#1f2329' }}>
         <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>地图组件配置</h3>
+
+        {/* 字段读取诊断 */}
+        {fieldError ? (
+          <div style={{ background: '#fff1f0', color: '#d4380d', padding: '8px 10px', borderRadius: 6, fontSize: 12, marginBottom: 10, wordBreak: 'break-all' }}>
+            ⚠ 读取字段失败：{fieldError}
+          </div>
+        ) : fields.length === 0 ? (
+          <div style={{ color: '#8a919f', fontSize: 12, marginBottom: 10 }}>正在读取字段…</div>
+        ) : (
+          <div style={{ color: '#52c41a', fontSize: 12, marginBottom: 10 }}>✓ 已读取 {fields.length} 个字段</div>
+        )}
+
         <div style={{ fontSize: 13, marginBottom: 8 }}>选择要在地图上定位的「坐标字段」：</div>
-        <select
-          value={selId}
-          onChange={(e) => setConfig((prev) => ({ ...prev, coordFieldId: e.target.value, coordFieldName: coordCandidates.find((c) => c.id === e.target.value)?.name || '', tableId }))}
-          style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13 }}
-        >
-          {coordCandidates.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}{c.isCoord ? '（坐标）' : ''}</option>
-          ))}
-        </select>
+        {fields.length > 0 ? (
+          <select
+            value={selId}
+            onChange={(e) => setConfig((prev) => ({ ...prev, coordFieldId: e.target.value, coordFieldName: coordCandidates.find((c) => c.id === e.target.value)?.name || '', tableId }))}
+            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13 }}
+          >
+            {coordCandidates.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}{c.isCoord ? '（坐标）' : ''}</option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="text"
+            placeholder="手动输入坐标字段名（如：坐标 / 经纬度）"
+            value={config.coordFieldName}
+            onChange={(e) => setConfig((prev) => ({ ...prev, coordFieldName: e.target.value }))}
+            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, boxSizing: 'border-box' }}
+          />
+        )}
         <button
-          onClick={() => { saveConfig({ ...config, coordFieldId: selId, coordFieldName: selName, tableId }); }}
+          onClick={() => { saveConfig({ ...config, coordFieldId: selId, coordFieldName: fields.length ? selName : config.coordFieldName, tableId }); }}
           style={{ marginTop: 14, padding: '8px 20px', borderRadius: 6, border: 'none', background: '#3370ff', color: '#fff', fontSize: 13, cursor: 'pointer' }}
         >保存</button>
-        <div style={{ fontSize: 11, color: theme === 'dark' ? '#8a919f' : '#8a919f', marginTop: 12 }}>
+        <div style={{ fontSize: 11, color: '#8a919f', marginTop: 12 }}>
           提示：坐标字段应为「地理位置」类型（存经纬度，如 116.40,39.90）。配置保存后，组件将在地图上渲染该表数据。
         </div>
       </main>

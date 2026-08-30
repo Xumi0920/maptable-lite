@@ -24,21 +24,29 @@ export interface BitableRecordLike {
 
 /**
  * 把 SDK 的 IField 对象转成同步结构 { id, name, type }。
- * 注意：SDK 的 IField 里 name/type 是【异步方法】getName()/getType()（非属性），
- * 直接读 f.name/f.type 会是 undefined/函数，导致下拉为空。必须 await。
+ * 兼容两种形态：SDK 有的字段对象 name/type 是【异步方法】getName()/getType()（非属性），
+ * 有的版本直接是同步属性 f.name/f.type。这里属性优先，方法兜底。
+ * 直接读 f.name/f.type（当是异步方法时）会得到 undefined/函数，导致下拉为空。必须兼容。
  */
 export async function bitableFieldToLike(f: any): Promise<BitableFieldLike> {
-  // id 是同步属性；name/type 是异步方法
-  const id = f.id;
+  let id = f.id;
   let name = f.name;
   let type: number | string = f.type;
-  try {
-    if (typeof f.getName === 'function') name = await f.getName();
-  } catch { /* ignore */ }
-  try {
-    if (typeof f.getType === 'function') type = await f.getType();
-  } catch { /* ignore */ }
-  // getType 返回 FieldType 枚举值（数字），直接保留
+
+  // name：属性优先，若为函数或无值则尝试异步方法
+  if (typeof name === 'function' || name == null) {
+    try { if (typeof f.getName === 'function') name = await f.getName(); } catch { /* ignore */ }
+  }
+  // type：属性优先，若为函数或无值则尝试异步方法；并兼容枚举对象 {value}
+  if (typeof type === 'function' || type == null) {
+    try { if (typeof f.getType === 'function') type = await f.getType(); } catch { /* ignore */ }
+  }
+  // 枚举对象 { value } → 取 value
+  if (type && typeof type === 'object') type = (type as any)?.value ?? (type as any)?.type ?? type;
+
+  // id 兜底：无 id 用 name 当 key（展示仍可用；展示模式会重新读真实 id）
+  if (id == null) id = `fld_${String(name ?? 'field')}`;
+
   return { id, name: name || '字段', type };
 }
 
