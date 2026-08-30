@@ -8,6 +8,7 @@ import type { DataSet } from '../types';
 import { aggregateByRegion, findRegionField, findMetricField, type RegionAggMode } from '../lib/regions';
 import { parseProvinces, normalizeRegionName, type ProvinceFeature } from '../lib/geo';
 import provincesGeo from '../lib/china_provinces.json';
+import { fieldValue } from '../lib/utils';
 
 export interface RegionMapPanelProps {
   dataSet: DataSet;
@@ -49,6 +50,12 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
     }
     return map;
   }, [dataSet, regionField, metricField, mode]);
+
+  // 省份值样本（诊断用：看省份字段值格式，判断为何聚合不出）
+  const provSample = useMemo(() => {
+    if (!regionField) return '';
+    return dataSet.rowIds.slice(0, 4).map((id) => String(fieldValue(dataSet.rows[id], regionField) ?? '')).join(' | ');
+  }, [dataSet, regionField]);
 
   // 内置省界 GeoJSON（import 打包进 bundle，飞书 iframe 也必然可达，非 fetch）
   useEffect(() => {
@@ -162,6 +169,7 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
         <div>高德: {amapLoading ? '⏳加载中' : amapError ? `❌${amapError}` : amapReady ? '✅ready' : '未加载'}</div>
         <div>容器: {containerH}px · 省界: {provinces.length} · 地图块: {polygonsRef.current.length}</div>
         <div>行政区: {regionField?.name || '?'} · 聚合: {Object.keys(regionMap).length} 省 {Object.keys(regionMap).slice(0, 5).join(',')}</div>
+        <div>省份值样本: {provSample || '(空)'}</div>
         <div>{status}</div>
       </div>
       <div className="region-legend">
