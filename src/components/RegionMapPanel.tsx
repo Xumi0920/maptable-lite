@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useAMap } from '../lib/useAMap';
 import type { DataSet } from '../types';
 import { aggregateByRegion, findRegionField, findMetricField, type RegionAggMode } from '../lib/regions';
-import { parseProvinces, type ProvinceFeature } from '../lib/geo';
+import { parseProvinces, normalizeRegionName, type ProvinceFeature } from '../lib/geo';
 import provincesGeo from '../lib/china_provinces.json';
 
 export interface RegionMapPanelProps {
@@ -27,6 +27,7 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const [provinces, setProvinces] = useState<ProvinceFeature[]>([]);
   const [status, setStatus] = useState('');
+  const [mapReady, setMapReady] = useState(false);
 
   // 字段
   const regionField = useMemo(() => {
@@ -58,14 +59,16 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
     if (!amapReady || !containerRef.current || mapRef.current) return;
     const map = new AMap!.Map(containerRef.current, { center: [105, 36], zoom: 4 });
     mapRef.current = map;
-    return () => { try { map.destroy(); } catch { /* ignore */ } mapRef.current = null; };
+    setMapReady(true);
+    return () => { try { map.destroy(); } catch { /* ignore */ } mapRef.current = null; setMapReady(false); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [amapReady]);
 
-  // 根据省名算颜色（归一化匹配）
+  // 根据省名算颜色（用 matchProvince 归一化匹配到 GeoJSON 省，再匹配聚合值）
   const colorOf = useCallback((provinceName: string): string => {
-    // 用归一化名在 regionMap 里找
-    const entry = Object.entries(regionMap).find(([k]) => normEq(k, provinceName));
+    // provinceName 是 GeoJSON 省名（如"北京市"），归一化后去 regionMap 找用户数据的省
+    const geoNorm = normalizeRegionName(provinceName);
+    const entry = Object.entries(regionMap).find(([k]) => normalizeRegionName(k) === geoNorm);
     if (!entry) return '#f0f1f3';
     const vals = Object.values(regionMap).map((v) => v.value);
     const min = Math.min(...vals), max = Math.max(...vals);
@@ -76,7 +79,7 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
 
   // 渲染省界 polygon
   useEffect(() => {
-    if (!mapRef.current || !provinces.length) return;
+    if (!mapReady || !provinces.length) return;
     const map = mapRef.current;
     // 清旧
     polygonsRef.current.forEach((p) => { try { p.setMap(null); } catch { /* ignore */ } });
@@ -100,7 +103,7 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
     try { map.setFitView(); } catch { /* ignore */ }
     setStatus('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provinces, regionMap, colorOf]);
+  }, [mapReady, provinces, regionMap, colorOf]);
 
   const showTooltip = (prov: ProvinceFeature, _color: string) => {
     const map = mapRef.current;
@@ -111,7 +114,7 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
       document.body.appendChild(el);
       tooltipRef.current = el;
     }
-    const entry = Object.entries(regionMap).find(([k]) => normEq(k, prov.name));
+    const entry = Object.entries(regionMap).find(([k]) => normalizeRegionName(k) === normalizeRegionName(prov.name));
     const valText = entry ? `：${fmtNum(entry[1].value)}` : '：无数据';
     tooltipRef.current.innerHTML = `${prov.name}${valText}`;
     tooltipRef.current.style.display = 'block';
@@ -147,14 +150,6 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
   );
 }
 
-function normEq(a: string, b: string): boolean {
-  const na = normalizeName(a), nb = normalizeName(b);
-  if (!na || !nb) return false;
-  return na === nb || na.includes(nb) || nb.includes(na);
-}
-function normalizeName(s: string): string {
-  return String(s || '').trim().replace(/(省|市|区|县|特别行政区|自治区|地区|盟|自治州|壮族|回族|维吾尔|蒙古|藏|满)/g, '');
-}
 function modeLabel(m: RegionAggMode): string {
   return { count: '计数', sum: '求和', avg: '平均', max: '最大', min: '最小' }[m] || m;
 }
