@@ -84,6 +84,20 @@ async function recordToRow(fieldList: BitableFieldLike[], fields: FieldDef[], re
   return row;
 }
 
+/** 从 SDK cell value 提取文本字符串（健壮处理 数组/对象/裸值）
+ * 飞书 SDK 很多字段 getValue() 返回数组（如单选 [{text,value}]）或对象（{text}）；
+ * 直接用 v.text/v.value 在数组上取不到 → 空。此函数递归提取数组每项/对象 text/value/name。 */
+function cellText(v: unknown): string {
+  if (v == null) return '';
+  if (Array.isArray(v)) return v.map(cellText).filter(Boolean).join(', ');
+  if (typeof v === 'object') {
+    const x = (v as any)?.text ?? (v as any)?.value ?? (v as any)?.name ?? (v as any)?.number ?? '';
+    if (x && typeof x === 'object') return cellText(x);
+    return String(x ?? '');
+  }
+  return String(v);
+}
+
 /** SDK cell value → 本地简单值 */
 function sdkValueToLocal(fieldType: string, v: unknown): unknown {
   if (v == null) return '';
@@ -95,8 +109,7 @@ function sdkValueToLocal(fieldType: string, v: unknown): unknown {
       return isNaN(num) ? '' : num;
     }
     case 'select': {
-      const x = typeof v === 'object' && v !== null ? (v as any)?.text ?? (v as any)?.value : v;
-      return typeof x === 'number' ? String(x) : String(x ?? '');
+      return cellText(v);
     }
     case 'date': {
       // SDK 日期可能是毫秒 { timestamp } 或裸毫秒
@@ -117,9 +130,7 @@ function sdkValueToLocal(fieldType: string, v: unknown): unknown {
       return String(v);
     }
     default: {
-      // 文本可能 { text } 或裸字符串
-      if (typeof v === 'object' && v !== null) return String((v as any)?.text ?? (v as any)?.value ?? '');
-      return String(v);
+      return cellText(v);
     }
   }
 }
