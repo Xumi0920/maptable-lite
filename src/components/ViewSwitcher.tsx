@@ -1,14 +1,15 @@
 // 视图切换容器：顶部 tab（表格/看板/日历/区域地图）+ 各视图的字段配置选择器
 // 视图类型定义在 types/view.ts（ViewType）；每种视图是独立组件
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, lazy, Suspense } from 'react';
 import type { DataSet, FilterDef, Selection, SortDef, ViewType } from '../types';
 import type { RegionAggMode } from '../lib/regions';
 import { findRegionField, findMetricField } from '../lib/regions';
 import TablePanel from './TablePanel';
 import KanbanView from './views/KanbanView';
 import CalendarView from './views/CalendarView';
-import RegionMapPanel from './RegionMapPanel';
+// 区域地图（含 599KB 省界 GeoJSON）懒加载：主应用首屏不预加载，切区域地图 tab 才加载
+const RegionMapPanel = lazy(() => import('./RegionMapPanel'));
 
 export interface ViewSwitcherProps {
   dataSet: DataSet;
@@ -116,7 +117,11 @@ export default function ViewSwitcher(props: ViewSwitcherProps) {
         {view === 'table' && <TablePanel {...props} />}
         {view === 'kanban' && <KanbanView dataSet={dataSet} selectFieldId={kanbanFieldId} selection={selection} onSelectRows={onSelectRows} onUpdateCell={onUpdateCell} />}
         {view === 'calendar' && <CalendarView dataSet={dataSet} dateFieldId={calendarFieldId} selection={selection} onSelectRows={onSelectRows} />}
-        {view === 'region' && <RegionMapPanel dataSet={dataSet} regionFieldId={regionFieldSel} metricFieldId={metricFieldSel} mode={aggMode} />}
+        {view === 'region' && (
+          <Suspense fallback={<div className="region-loading">🗺️ 正在加载区域地图…</div>}>
+            <RegionMapPanel dataSet={dataSet} regionFieldId={regionFieldSel} metricFieldId={metricFieldSel} mode={aggMode} />
+          </Suspense>
+        )}
       </div>
     </div>
   );

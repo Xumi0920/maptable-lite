@@ -558,3 +558,11 @@ input:focus, select:focus { outline: 2px solid var(--primary-light); border-colo
   background: rgba(0,0,0,0.78); color: #fff; padding: 5px 9px; border-radius: 5px;
   font-size: 12px; white-space: nowrap;
 }
+.region-loading {
+  display: flex; align-items: center; justify-content: center; height: 100%;
+  color: var(--muted); font-size: 14px; gap: 8px;
+}
+.region-map-topbar { padding: 8px 14px; gap: 12px; }
+.region-map-topbar .region-back { white-space: nowrap; }
+.region-map-topbar select { border: 1px solid var(--border); background: #fff; border-radius: 6px; }
+.region-diag { top: 52px; }
