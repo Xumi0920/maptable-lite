@@ -116,9 +116,9 @@ export default function FeishuPluginApp() {
     let cancelled = false;
     (async () => {
       try {
-        const list = await loadTableList();
+        await loadTableList();  // 只更新 tables state，不用返回值（展示模式读 config.tableId 指定的表）
         if (cancelled) return;
-        const useTableId = config.tableId || list[0]?.id || '';
+        const useTableId = config.tableId || '';  // 只用配置保存的表 id（等 getConfig 返回后再加载，避免拿到错误的第一张表）
         if (!isConfig) {
           if (useTableId) {
             setTableSelection(useTableId);
@@ -150,7 +150,7 @@ export default function FeishuPluginApp() {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [config.tableId]);
 
   const [tableSelection, setTableSelection] = useState('');
   const onTableChange = async (tableId: string) => {
