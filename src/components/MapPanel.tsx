@@ -222,10 +222,27 @@ function MapPanelInner(props: MapPanelProps, ref: React.Ref<MapPanelHandle>) {
   const renderHeatmap = (pts: Array<{ id: string; coord: [number, number] }>) => {
     const AM = AMap!;
     const map = mapRef.current;
-    const heatmap = new AM.Heatmap(map, { radius: 40, opacity: [0, 0.8] });
-    heatmap.setDataSet({ data: pts.map((p) => ({ lnglat: [p.coord[0], p.coord[1]], count: 1 })), max: 20 });
-    heatmap.setOptions({ gradient: { 0.2: '#00f', 0.4: '#0cf', 0.6: '#0f0', 0.8: '#ff0', 1: '#f00' } });
-    overlaysRef.current.push(heatmap);
+    // 高德 JS API 2.0：热力图插件类名为 AMap.HeatMap（大写 M），
+    // 且需通过 map.plugin 确保插件加载后再实例化（否则 heatmap 对象无 setDataSet 方法）
+    const ensureHeatMap = (cb: (HeatMap: any) => void) => {
+      if (AM.HeatMap) { cb(AM.HeatMap); return; }
+      map.plugin(['AMap.HeatMap'], () => {
+        // 插件加载后 AMap.HeatMap 应已存在
+        cb((AM as any).HeatMap);
+      });
+    };
+    ensureHeatMap((HeatMap: any) => {
+      try {
+        const heatmap = new HeatMap(map, { radius: 40, opacity: [0, 0.8] });
+        heatmap.setDataSet({ data: pts.map((p) => ({ lnglat: [p.coord[0], p.coord[1]], count: 1 })), max: 20 });
+        heatmap.setOptions({ gradient: { 0.2: '#00f', 0.4: '#0cf', 0.6: '#0f0', 0.8: '#ff0', 1: '#f00' } });
+        overlaysRef.current.push(heatmap);
+      } catch (e) {
+        // 热力图失败不阻塞其它图层，仅提示
+        // eslint-disable-next-line no-console
+        console.warn('[maptable] 热力图渲染失败:', e);
+      }
+    });
   };
 
   const renderGeo = (pts: Array<{ id: string; coord: [number, number] }>, kind: 'line' | 'polygon') => {

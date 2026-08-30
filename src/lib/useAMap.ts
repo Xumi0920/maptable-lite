@@ -10,7 +10,7 @@ export interface AMapGlobal {
   Marker: any;
   CircleMarker: any;
   MarkerCluster: any;
-  Heatmap: any;
+  HeatMap: any;
   Polyline: any;
   Polygon: any;
   InfoWindow: any;
@@ -54,7 +54,7 @@ export function useAMap(): { AMap: AMapGlobal | null; loading: boolean; error: s
       securityJsCode: AMAP_SECURITY,
       plugins: [
         'AMap.MarkerCluster',
-        'AMap.Heatmap',
+        'AMap.HeatMap',
         'AMap.InfoWindow',
         'AMap.Geocoder',
         'AMap.PlaceSearch',
@@ -81,7 +81,7 @@ export function useAMap(): { AMap: AMapGlobal | null; loading: boolean; error: s
 
   const ready = !!amap && !loading && !error;
 
-  return { AMap: amap, loading, error, ready, plugins: ['Marker', 'CircleMarker', 'MarkerCluster', 'Heatmap', 'Polyline', 'Polygon', 'InfoWindow', 'Geocoder', 'PlaceSearch', 'ToolBar', 'Scale', 'MapType'] };
+  return { AMap: amap, loading, error, ready, plugins: ['Marker', 'CircleMarker', 'MarkerCluster', 'HeatMap', 'Polyline', 'Polygon', 'InfoWindow', 'Geocoder', 'PlaceSearch', 'ToolBar', 'Scale', 'MapType'] };
 }
 
 /** 宽屏默认中心（全国/华东，可被用户数据覆盖） */
