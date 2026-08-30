@@ -126,9 +126,13 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
     if (!amapReady || !containerRef.current || mapRef.current) return;
     const map = new AMap!.Map(containerRef.current, { center: [105, 36], zoom: 3.6 });
     mapRef.current = map;
-    districtRef.current = new AMap!.DistrictSearch({ subdistrict: 1, showbiz: false, extensions: 'all' });
-    queryLevel(map, '中国', 'province');
-    return () => { try { map.destroy(); } catch { /* ignore */ } mapRef.current = null; };
+    // DistrictSearch 是懒加载插件，必须 AMap.plugin 同步下发后才能 new，否则对象不可用、search 回调永不触发
+    AMap!.plugin(['AMap.DistrictSearch'], () => {
+      if (!mapRef.current) return;
+      districtRef.current = new AMap!.DistrictSearch({ subdistrict: 1, showbiz: false, extensions: 'all' });
+      queryLevel(map, '中国', 'province');
+    });
+    return () => { try { map.destroy(); } catch { /* ignore */ } mapRef.current = null; districtRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [amapReady]);
 
