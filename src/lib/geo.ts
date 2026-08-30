@@ -78,3 +78,20 @@ export function provincesToGeoFeatures(geojson: any): GeoFeature[] {
     name: p.name,
   }));
 }
+
+/**
+ * 按省 adcode 动态加载该省市级 GeoJSON（阿里 DataV areas_v3/bound/{adcode}_full.json）
+ * —— 下钻用：点省级 polygon → 拿到 adcode → 拉该省市界 → 渲染市级 choropleth。
+ * 用绝对 URL（避免飞书 iframe 相对路径取不到的问题）；DataV 支持 CORS。
+ */
+export async function loadCityGeo(adcode: string): Promise<ProvinceFeature[]> {
+  const url = `https://geo.datav.aliyun.com/areas_v3/bound/${adcode}_full.json`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const geo = await res.json();
+    return parseProvinces(geo);
+  } catch (e: any) {
+    throw new Error(`加载市级边界失败(${adcode}): ${String(e?.message || e)}`);
+  }
+}

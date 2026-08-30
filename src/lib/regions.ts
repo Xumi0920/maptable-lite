@@ -92,6 +92,18 @@ export function findRegionField(dataSet: DataSet): FieldDef | undefined {
   return fields.find((f) => f.type === 'select');
 }
 
+/** 自动识别城市字段（下钻到省后用城市聚合；优先"城市"类名字） */
+export function findCityField(dataSet: DataSet): FieldDef | undefined {
+  const fields = dataSet.fields;
+  const city = fields.find((f) =>
+    /城市|城市名|市$|city|city_name|municipality/i.test(f.name)
+  );
+  if (city) return city;
+  // 兜底：非"省份"字段的文本/单选字段（含 dept/prefecture 等）
+  const provId = findRegionField(dataSet)?.id;
+  return fields.find((f) => f.id !== provId && (f.type === 'text' || f.type === 'select'));
+}
+
 /** 自动识别指标字段（优先 number 类型） */
 export function findMetricField(dataSet: DataSet): FieldDef | undefined {
   return dataSet.fields.find((f) => f.type === 'number');

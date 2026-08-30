@@ -5,8 +5,8 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useAMap } from '../lib/useAMap';
 import type { DataSet } from '../types';
-import { aggregateByRegion, findRegionField, findMetricField, type RegionAggMode } from '../lib/regions';
-import { parseProvinces, normalizeRegionName, type ProvinceFeature } from '../lib/geo';
+import { aggregateByRegion, findRegionField, findMetricField, findCityField, type RegionAggMode } from '../lib/regions';
+import { parseProvinces, normalizeRegionName, loadCityGeo, type ProvinceFeature } from '../lib/geo';
 import provincesGeo from '../lib/china_provinces.json';
 import { fieldValue } from '../lib/utils';
 
@@ -31,32 +31,40 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
   const [mapReady, setMapReady] = useState(false);
   const [containerH, setContainerH] = useState(0);
   const [showDiag, setShowDiag] = useState(false);
+  const [level, setLevel] = useState<'province' | 'city'>('province');
+  const [parentRegion, setParentRegion] = useState<{ name: string; adcode: string } | null>(null);
+  const [cityLoading, setCityLoading] = useState(false);
 
   // 字段
   const regionField = useMemo(() => {
     if (regionFieldId) return dataSet.fields.find((f) => f.id === regionFieldId);
     return findRegionField(dataSet);
   }, [dataSet, regionFieldId]);
+  // 城市字段（下钻到省后聚合用）
+  const cityField = useMemo(() => findCityField(dataSet), [dataSet]);
   const metricField = useMemo(() => {
     if (metricFieldId) return dataSet.fields.find((f) => f.id === metricFieldId);
     return findMetricField(dataSet);
   }, [dataSet, metricFieldId]);
 
-  // 聚合结果：省名(归一化) → 值
+  // 当前聚合用的行政区字段：省级=省份字段，下钻=城市字段
+  const activeRegionField = useMemo(() => (level === 'city' ? (cityField || regionField) : regionField), [level, cityField, regionField]);
+
+  // 聚合结果：行政区名(归一化) → 值
   const regionMap = useMemo<Record<string, { name: string; value: number }>>(() => {
     const map: Record<string, { name: string; value: number }> = {};
-    if (!regionField) return map;
-    for (const agg of aggregateByRegion(dataSet, regionField, metricField, mode)) {
+    if (!activeRegionField) return map;
+    for (const agg of aggregateByRegion(dataSet, activeRegionField, metricField, mode)) {
       map[agg.name] = { name: agg.name, value: agg.value };
     }
     return map;
-  }, [dataSet, regionField, metricField, mode]);
+  }, [dataSet, activeRegionField, metricField, mode]);
 
   // 省份值样本（诊断用：看省份字段值格式，判断为何聚合不出）
   const provSample = useMemo(() => {
-    if (!regionField) return '';
-    return dataSet.rowIds.slice(0, 4).map((id) => String(fieldValue(dataSet.rows[id], regionField) ?? '')).join(' | ');
-  }, [dataSet, regionField]);
+    if (!activeRegionField) return '';
+    return dataSet.rowIds.slice(0, 4).map((id) => String(fieldValue(dataSet.rows[id], activeRegionField) ?? '')).join(' | ');
+  }, [dataSet, activeRegionField]);
 
   // 内置省界 GeoJSON（import 打包进 bundle，飞书 iframe 也必然可达，非 fetch）
   useEffect(() => {
@@ -101,6 +109,31 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
     return COLOR_SCALE[idx];
   }, [regionMap]);
 
+  // 下钻：点省级 polygon → 按 adcode 拉该省市界 → 渲染市级 choropleth（用城市字段聚合）
+  const drillDown = useCallback(async (prov: ProvinceFeature) => {
+    if (!prov?.adcode) return;
+    setStatus(`加载 ${prov.name} 市级数据...`);
+    setCityLoading(true);
+    try {
+      const cities = await loadCityGeo(prov.adcode);
+      if (!cities.length) { setStatus(`${prov.name} 暂无市级边界`); setCityLoading(false); return; }
+      setProvinces(cities);
+      setParentRegion({ name: prov.name, adcode: prov.adcode });
+      setLevel('city');
+      setStatus('');
+    } catch (e: any) {
+      setStatus(String(e?.message || e));
+    }
+    setCityLoading(false);
+  }, []);
+  // 返回上一级（回到全国省级）
+  const goBack = useCallback(() => {
+    try { setProvinces(parseProvinces(provincesGeo)); } catch { /* ignore */ }
+    setParentRegion(null);
+    setLevel('province');
+    setStatus('');
+  }, []);
+
   // 渲染省界 polygon
   useEffect(() => {
     if (!mapReady || !provinces.length) return;
@@ -121,13 +154,14 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
           try { poly.setOptions({ fillOpacity: 0.95 }); } catch { /* ignore */ }
         });
         poly.on('mouseout', () => { hideTooltip(); try { poly.setOptions({ fillOpacity: 0.8 }); } catch { /* ignore */ } });
+        poly.on('click', () => { if (level === 'province') drillDown(prov); });
         polygonsRef.current.push(poly);
       }
     }
     try { map.setFitView(); } catch { /* ignore */ }
     setStatus('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapReady, provinces, regionMap, colorOf]);
+  }, [mapReady, provinces, regionMap, colorOf, level, drillDown]);
 
   const showTooltip = (prov: ProvinceFeature, _color: string) => {
     const map = mapRef.current;
@@ -158,17 +192,21 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
   return (
     <div className="region-map-view">
       <div className="region-map-topbar">
-        <span className="region-path">中国</span>
+        <span className="region-path">中国{parentRegion ? <>{parentRegion.name}</> : ''}</span>
         <div className="spacer" />
+        {parentRegion && (
+          <button className="region-back" onClick={goBack}>← 返回上一级</button>
+        )}
         <button className="region-back" style={{ padding: '3px 10px', fontSize: 11 }} onClick={() => setShowDiag((s) => !s)}>
           {showDiag ? '隐藏诊断' : '诊断'}
         </button>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-          {regionField.name} × {metricField ? metricField.name : '计数'}（{modeLabel(mode)}）
+          {activeRegionField?.name || regionField?.name || '?'} × {metricField ? metricField.name : '计数'}（{modeLabel(mode)}）
         </span>
       </div>
       <div className="region-map-canvas" ref={containerRef} />
       {status && <div className="region-status">{status}</div>}
+      {cityLoading && <div className="region-status" style={{ top: 78 }}>加载市级数据…</div>}
       {showDiag && (
         <div className="region-diag" style={{ position: 'absolute', top: 40, left: 8, fontSize: 10, color: '#666', background: 'rgba(255,255,255,.9)', padding: '6px 10px', borderRadius: 4, zIndex: 20, pointerEvents: 'none', maxWidth: '70%', lineHeight: 1.5 }}>
           <div>高德: {amapLoading ? '⏳加载中' : amapError ? `❌${amapError}` : amapReady ? '✅ready' : '未加载'}</div>
