@@ -14,8 +14,7 @@ import { bitable } from '@lark-base-open/js-sdk';
 import { useTheme, useConfig } from './hooks';
 import { dataSetFromBitable, type BitableFieldLike, type BitableRecordLike } from './bitableToDataSet';
 import { findRegionField, findMetricField, type RegionAggMode } from '../lib/regions';
-import type { DataSet, LayerType, Selection, FieldDef } from '../types';
-import MapPanel from '../components/MapPanel';
+import type { DataSet } from '../types';
 import RegionMapPanel from '../components/RegionMapPanel';
 import '../index.css';
 
@@ -30,7 +29,6 @@ const DEFAULT_CONFIG: PluginConfig = { tableId: '', coordFieldId: '', coordField
 interface TableMeta { id: string; name: string }
 
 // 展示模式样式常量
-const vizBtn: CSSProperties = { padding: '4px 12px', borderRadius: 6, border: '1px solid #d9d9d9', fontSize: 12, cursor: 'pointer' };
 const selStyle: CSSProperties = { padding: '4px 8px', borderRadius: 6, border: '1px solid #ccc', fontSize: 12 };
 
 export default function FeishuPluginApp() {
@@ -43,10 +41,7 @@ export default function FeishuPluginApp() {
   const [fields, setFields] = useState<BitableFieldLike[]>([]);
   const [fieldError, setFieldError] = useState('');
   const [debug, setDebug] = useState('初始化');
-  const [layer, setLayer] = useState<LayerType>('scatter');
-  const [selection, setSelection] = useState<Selection>({ rowIds: [] });
-  // 展示模式可视化切换：点位 / 区域地图
-  const [viz, setViz] = useState<'scatter' | 'region'>('scatter');
+  // 展示模式：只保留区域地图（飞书插件专注区域聚合，去掉点位地图）
   const [regionFieldId, setRegionFieldId] = useState('');
   const [regionMetricId, setRegionMetricId] = useState('');
   const [regionMode, setRegionMode] = useState<RegionAggMode>('sum');
@@ -166,13 +161,6 @@ export default function FeishuPluginApp() {
   };
 
   // 坐标字段：地理位置(22)优先，否则含"坐标/位置/lng/lat/经纬"的字段
-  const coordField = useMemo<FieldDef | undefined>(() => {
-    if (!dataSet) return undefined;
-    const geoField = dataSet.fields.find((f) => f.type === 'coordinate');
-    if (geoField) return geoField;
-    return dataSet.fields.find((f) => f.name.toLowerCase().includes('坐标') || f.name.toLowerCase().includes('位置') || f.name.toLowerCase().includes('经纬'));
-  }, [dataSet]);
-
   const coordCandidates = useMemo(() => {
     return fields.map((f) => ({
       id: f.id, name: f.name,
@@ -240,27 +228,20 @@ export default function FeishuPluginApp() {
         诊断: {debug} · tableId={config.tableId || '(空)'} · 表数 {tables.length}
       </div>
 
-      {/* 可视化类型切换（点位 / 区域地图） */}
+      {/* 区域地图配置条（飞书插件只做区域地图） */}
       <div style={{ display: 'flex', gap: 6, padding: '6px 12px', borderBottom: '1px solid rgba(0,0,0,0.06)', alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: '#8a919f' }}>可视化：</span>
-        <button onClick={() => setViz('scatter')} style={{ ...vizBtn, background: viz === 'scatter' ? '#3370ff' : '#fff', color: viz === 'scatter' ? '#fff' : '#333' }}>点位地图</button>
-        <button onClick={() => setViz('region')} style={{ ...vizBtn, background: viz === 'region' ? '#3370ff' : '#fff', color: viz === 'region' ? '#fff' : '#333' }}>区域地图</button>
-        {viz === 'region' && (
-          <>
-            <span style={{ fontSize: 12, color: '#8a919f' }}>行政区：</span>
-            <select value={regionFieldSel} onChange={(e) => setRegionFieldId(e.target.value)} style={{ ...selStyle }}>
-              {regionTextFields.length ? regionTextFields.map((f) => <option key={f.id} value={f.id}>{f.name}</option>) : <option value="">（无文本/单选字段）</option>}
-            </select>
-            <span style={{ fontSize: 12, color: '#8a919f' }}>指标：</span>
-            <select value={regionMetricSel} onChange={(e) => setRegionMetricId(e.target.value)} style={{ ...selStyle }}>
-              <option value="">（计数）</option>
-              {regionNumFields.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-            </select>
-            <select value={regionMode} onChange={(e) => setRegionMode(e.target.value as RegionAggMode)} style={{ ...selStyle }}>
-              <option value="count">计数</option><option value="sum">求和</option><option value="avg">平均</option><option value="max">最大</option><option value="min">最小</option>
-            </select>
-          </>
-        )}
+        <span style={{ fontSize: 12, color: '#8a919f' }}>行政区：</span>
+        <select value={regionFieldSel} onChange={(e) => setRegionFieldId(e.target.value)} style={{ ...selStyle }}>
+          {regionTextFields.length ? regionTextFields.map((f) => <option key={f.id} value={f.id}>{f.name}</option>) : <option value="">（无文本/单选字段）</option>}
+        </select>
+        <span style={{ fontSize: 12, color: '#8a919f' }}>指标：</span>
+        <select value={regionMetricSel} onChange={(e) => setRegionMetricId(e.target.value)} style={{ ...selStyle }}>
+          <option value="">（计数）</option>
+          {regionNumFields.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+        </select>
+        <select value={regionMode} onChange={(e) => setRegionMode(e.target.value as RegionAggMode)} style={{ ...selStyle }}>
+          <option value="count">计数</option><option value="sum">求和</option><option value="avg">平均</option><option value="max">最大</option><option value="min">最小</option>
+        </select>
       </div>
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -269,11 +250,7 @@ export default function FeishuPluginApp() {
         </div>
         <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
           {loading && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8a919f' }}>加载中…</div>}
-          {!loading && dataSet && viz === 'scatter' && (
-            <MapPanel dataSet={dataSet} coordField={coordField} layer={layer} onLayerChange={setLayer} selection={selection}
-              onSelectRows={(rows) => setSelection({ rowIds: rows })} onCoordFieldChange={() => {}} />
-          )}
-          {!loading && dataSet && viz === 'region' && (
+          {!loading && dataSet && (
             <RegionMapPanel dataSet={dataSet} regionFieldId={regionFieldSel} metricFieldId={regionMetricSel} mode={regionMode} />
           )}
           {!loading && !dataSet && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8a919f' }}>请先在配置模式选择表和坐标字段</div>}
@@ -283,7 +260,7 @@ export default function FeishuPluginApp() {
         <div style={{ padding: '8px 14px', borderTop: '1px solid rgba(0,0,0,0.06)', fontSize: 12 }}>
           <span style={{ marginRight: 12 }}>记录: {dataSet.rowIds.length}</span>
           <span style={{ marginRight: 12 }}>字段: {dataSet.fields.length}</span>
-          {viz === 'scatter' ? <span>坐标字段: {coordField?.name || '（未识别）'}</span> : <span>行政区字段: {regionTextFields.find((f) => f.id === regionFieldSel)?.name || '（未识别）'}</span>}
+          <span>行政区字段: {regionTextFields.find((f) => f.id === regionFieldSel)?.name || '（未识别）'}</span>
         </div>
       )}
     </main>
