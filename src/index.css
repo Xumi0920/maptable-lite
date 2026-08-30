@@ -343,3 +343,85 @@ input:focus, select:focus { outline: 2px solid var(--primary-light); border-colo
 
 /* 图标 */
 .mtree-icon { display: inline-block; width: 14px; height: 14px; }
+
+/* ---------- 仪表盘面板 ---------- */
+.dashboard-panel {
+  position: fixed;
+  top: 0; right: 0;
+  height: 100vh;
+  width: 680px;
+  max-width: 94vw;
+  background: var(--surface);
+  z-index: 105;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 24px rgba(0,0,0,0.14);
+  animation: slideIn 0.2s ease;
+  overflow: hidden;
+}
+.dashboard-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+  font-weight: 700; font-size: 16px;
+}
+.dashboard-header .dashboard-title small { color: var(--muted); font-weight: 400; margin-left: 8px; font-size: 12px; }
+.dashboard-close {
+  border: none; background: transparent; font-size: 18px; color: var(--muted);
+  cursor: pointer; padding: 4px 8px; border-radius: 6px;
+}
+.dashboard-close:hover { background: #f3f4f6; color: var(--text); }
+
+/* 统计卡片网格 */
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding: 14px 16px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+}
+.stat-card {
+  display: flex; align-items: center; gap: 10px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.stat-card .stat-icon {
+  width: 34px; height: 34px; flex: 0 0 auto;
+  border-radius: 8px; background: var(--primary-light);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; color: var(--primary);
+}
+.stat-card .stat-label { font-size: 11px; color: var(--muted); }
+.stat-card .stat-value { font-size: 17px; font-weight: 700; color: var(--text); line-height: 1.2; }
+.stat-card .stat-sub { font-size: 10px; color: var(--muted); }
+
+/* 图表网格 */
+.chart-grid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px 20px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.chart-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+.chart-card:first-child { grid-column: span 2; }
+.chart-card-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--text); }
+.chart-bar-toolbar { margin-bottom: 8px; }
+.chart-bar-toolbar select { font-size: 12px; padding: 4px 8px; }
+.chart-empty {
+  display: flex; align-items: center; justify-content: center;
+  height: 260px; color: var(--muted); font-size: 13px;
+}
+.dashboard-note {
+  padding: 8px 16px 14px; color: var(--muted); text-align: center;
+  border-top: 1px solid var(--border);
+}
+.dashboard-note small { font-size: 11px; }

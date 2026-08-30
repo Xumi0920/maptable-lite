@@ -8,6 +8,7 @@ import { uid } from './lib/utils';
 import { csvToDataSet, geojsonToDataSet, datasetToCsv, datasetToGeojson, downloadText, downloadJson } from './lib/io';
 import MapPanel, { type MapPanelHandle } from './components/MapPanel';
 import TablePanel from './components/TablePanel';
+import DashboardPanel from './components/DashboardPanel';
 import './index.css';
 
 const FIELD_TYPE_OPTIONS: Array<{ v: FieldDef['type']; label: string }> = [
@@ -29,6 +30,7 @@ function App() {
   const [layer, setLayer] = useState<LayerType>('scatter');
   const [selection, setSelection] = useState<Selection>({ rowIds: [] });
   const [drawer, setDrawer] = useState<'' | 'import' | 'fields'>('');
+  const [showDashboard, setShowDashboard] = useState(false);
   const mapRef = useRef<MapPanelHandle>(null);
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
 
@@ -183,6 +185,7 @@ function App() {
           <button onClick={() => handleExport('csv')}>导出CSV</button>
           <button onClick={() => handleExport('geojson')}>导出GeoJSON</button>
           <button onClick={() => setDrawer('fields')}>字段</button>
+          <button className="primary" onClick={() => setShowDashboard(true)}>📊 仪表盘</button>
           <button onClick={resetData}>重置示例</button>
         </div>
       </header>
@@ -232,6 +235,11 @@ function App() {
           onChangeCoordField={changeCoordField}
           onClose={() => setDrawer('')}
         />
+      )}
+
+      {/* 仪表盘面板 */}
+      {showDashboard && (
+        <DashboardPanel dataSet={dataSet} coordField={coordField} onClose={() => setShowDashboard(false)} />
       )}
     </div>
   );
