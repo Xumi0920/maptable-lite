@@ -431,3 +431,97 @@ input:focus, select:focus { outline: 2px solid var(--primary-light); border-colo
   display: flex; align-items: center; justify-content: center; color: var(--muted);
   box-shadow: -4px 0 24px rgba(0,0,0,0.14);
 }
+
+/* ---------- 多视图切换 ---------- */
+.view-switcher {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+}
+.view-tabs {
+  display: flex; gap: 4px; padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: #fafbfc;
+}
+.view-tab {
+  border: none; background: transparent; padding: 6px 14px;
+  border-radius: 7px; font-size: 13px; color: var(--muted);
+  display: flex; align-items: center; gap: 6px;
+}
+.view-tab:hover { background: #f0f4ff; color: var(--text); }
+.view-tab.active { background: var(--primary-light); color: var(--primary); font-weight: 600; }
+.view-tab-icon { font-size: 14px; }
+
+.view-config-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-bottom: 1px solid var(--border);
+  font-size: 12px; color: var(--muted); background: var(--surface);
+}
+.view-config-label { color: var(--muted); }
+.view-config-bar select { font-size: 12px; padding: 4px 8px; }
+
+.view-content {
+  flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0;
+}
+
+/* 看板 */
+.kanban-view {
+  flex: 1; display: flex; gap: 10px; overflow-x: auto; padding: 12px;
+  background: #f5f6f8; align-items: flex-start;
+}
+.kanban-col {
+  flex: 0 0 230px; min-width: 230px; max-height: 100%; overflow-y: auto;
+  background: #f0f1f3; border-radius: 10px; display: flex; flex-direction: column;
+  border: 1px solid var(--border);
+}
+.kanban-col.drag-over { border-color: var(--primary); background: var(--primary-light); }
+.kanban-col-head {
+  padding: 10px 12px; font-weight: 600; font-size: 13px;
+  color: var(--text); display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+.kanban-col-count {
+  background: var(--border); color: var(--muted); border-radius: 10px;
+  padding: 1px 8px; font-size: 11px; font-weight: 400;
+}
+.kanban-col-body { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.kanban-card {
+  background: #fff; border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px; cursor: grab; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  transition: box-shadow 0.1s;
+}
+.kanban-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.kanban-card.selected { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-light); }
+.kanban-card-title { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
+.kanban-card-sub { font-size: 11px; color: var(--muted); }
+.kanban-col-empty {
+  color: var(--muted); font-size: 12px; text-align: center; padding: 20px 8px;
+  border: 1px dashed var(--border-strong); border-radius: 8px;
+}
+
+/* 日历 */
+.calendar-view {
+  flex: 1; display: flex; flex-direction: column; padding: 12px; overflow: auto; background: var(--surface);
+}
+.calendar-toolbar {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+}
+.calendar-title { font-size: 15px; font-weight: 600; flex: 1; text-align: center; }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.calendar-weekday { text-align: center; font-size: 12px; color: var(--muted); padding: 6px 0; font-weight: 500; }
+.calendar-days { flex: 1; }
+.calendar-cell {
+  border: 1px solid var(--border); border-radius: 6px; min-height: 74px;
+  padding: 4px; font-size: 12px; overflow: hidden; display: flex; flex-direction: column; gap: 3px;
+  background: #fff;
+}
+.calendar-cell.dim { background: #fafbfc; opacity: 0.55; }
+.calendar-daynum { font-size: 11px; color: var(--muted); }
+.cal-event {
+  background: var(--primary-light); color: var(--primary); border-radius: 4px;
+  padding: 2px 5px; font-size: 11px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cal-event:hover { background: #dbe8ff; }
+.cal-event.selected { background: var(--primary); color: #fff; }

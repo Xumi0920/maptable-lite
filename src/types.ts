@@ -2,4 +2,4 @@
 
 export type { FieldType, FieldDef, Row, RowMap, DataSet } from './types/data';
 export type { GeometryType, LayerType, GeoFeature } from './types/geometry';
-export type { Selection, FilterDef, SortDef, TableConfig } from './types/view';
+export type { Selection, FilterDef, SortDef, TableConfig, ViewType } from './types/view';

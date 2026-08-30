@@ -8,7 +8,7 @@ import { useDataSet, useTableConfig } from './lib/usePersisted';
 import { csvToDataSet, geojsonToDataSet, datasetToCsv, datasetToGeojson, downloadText, downloadJson } from './lib/io';
 import { useDataSetActions } from './hooks/useDataSetActions';
 import MapPanel, { type MapPanelHandle } from './components/MapPanel';
-import TablePanel from './components/TablePanel';
+import ViewSwitcher from './components/ViewSwitcher';
 import DashboardPanel from './components/DashboardPanel';
 import ImportDrawer from './components/drawers/ImportDrawer';
 import FieldsDrawer from './components/drawers/FieldsDrawer';
@@ -135,7 +135,7 @@ function App() {
           onCoordFieldChange={changeCoordField}
         />
 
-        <TablePanel
+        <ViewSwitcher
           dataSet={dataSet}
           selection={selection}
           onSelectRows={selectRowsFromTable}
