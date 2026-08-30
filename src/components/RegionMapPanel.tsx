@@ -30,6 +30,7 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
   const [status, setStatus] = useState('');
   const [mapReady, setMapReady] = useState(false);
   const [containerH, setContainerH] = useState(0);
+  const [showDiag, setShowDiag] = useState(false);
 
   // 字段
   const regionField = useMemo(() => {
@@ -159,19 +160,24 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
       <div className="region-map-topbar">
         <span className="region-path">中国</span>
         <div className="spacer" />
+        <button className="region-back" style={{ padding: '3px 10px', fontSize: 11 }} onClick={() => setShowDiag((s) => !s)}>
+          {showDiag ? '隐藏诊断' : '诊断'}
+        </button>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>
           {regionField.name} × {metricField ? metricField.name : '计数'}（{modeLabel(mode)}）
         </span>
       </div>
       <div className="region-map-canvas" ref={containerRef} />
       {status && <div className="region-status">{status}</div>}
-      <div className="region-diag" style={{ position: 'absolute', top: 40, left: 8, fontSize: 10, color: '#666', background: 'rgba(255,255,255,.9)', padding: '6px 10px', borderRadius: 4, zIndex: 20, pointerEvents: 'none', maxWidth: '70%', lineHeight: 1.5 }}>
-        <div>高德: {amapLoading ? '⏳加载中' : amapError ? `❌${amapError}` : amapReady ? '✅ready' : '未加载'}</div>
-        <div>容器: {containerH}px · 省界: {provinces.length} · 地图块: {polygonsRef.current.length}</div>
-        <div>行政区: {regionField?.name || '?'} · 聚合: {Object.keys(regionMap).length} 省 {Object.keys(regionMap).slice(0, 5).join(',')}</div>
-        <div>省份值样本: {provSample || '(空)'}</div>
-        <div>{status}</div>
-      </div>
+      {showDiag && (
+        <div className="region-diag" style={{ position: 'absolute', top: 40, left: 8, fontSize: 10, color: '#666', background: 'rgba(255,255,255,.9)', padding: '6px 10px', borderRadius: 4, zIndex: 20, pointerEvents: 'none', maxWidth: '70%', lineHeight: 1.5 }}>
+          <div>高德: {amapLoading ? '⏳加载中' : amapError ? `❌${amapError}` : amapReady ? '✅ready' : '未加载'}</div>
+          <div>容器: {containerH}px · 省界: {provinces.length} · 地图块: {polygonsRef.current.length}</div>
+          <div>行政区: {regionField?.name || '?'} · 聚合: {Object.keys(regionMap).length} 省 {Object.keys(regionMap).slice(0, 6).join(',')}</div>
+          <div>省份值样本: {provSample || '(空)'}</div>
+          <div>{status}</div>
+        </div>
+      )}
       <div className="region-legend">
         {COLOR_SCALE.map((c) => <span key={c} className="region-legend-color" style={{ background: c }} />)}
         <div className="region-legend-label">低 → 高</div>
