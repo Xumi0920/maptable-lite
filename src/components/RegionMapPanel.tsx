@@ -7,6 +7,7 @@ import { useAMap } from '../lib/useAMap';
 import type { DataSet } from '../types';
 import { aggregateByRegion, findRegionField, findMetricField, type RegionAggMode } from '../lib/regions';
 import { parseProvinces, type ProvinceFeature } from '../lib/geo';
+import provincesGeo from '../lib/china_provinces.json';
 
 export interface RegionMapPanelProps {
   dataSet: DataSet;
@@ -47,12 +48,9 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
     return map;
   }, [dataSet, regionField, metricField, mode]);
 
-  // 预加载内置省界 GeoJSON
+  // 内置省界 GeoJSON（import 打包进 bundle，飞书 iframe 也必然可达，非 fetch）
   useEffect(() => {
-    fetch('/geo/china_provinces.json')
-      .then((r) => r.json())
-      .then((geo) => { setProvinces(parseProvinces(geo)); })
-      .catch((e) => setStatus(`省界数据加载失败: ${String(e)}`));
+    try { setProvinces(parseProvinces(provincesGeo)); } catch (e) { setStatus(`省界解析失败: ${String(e)}`); }
   }, []);
 
   // 初始化地图
