@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { bitable } from '@lark-base-open/js-sdk';
 import { useTheme, useConfig } from './hooks';
-import { dataSetFromBitable, bitableFieldToLike, type BitableFieldLike, type BitableRecordLike } from './bitableToDataSet';
+import { dataSetFromBitable, type BitableFieldLike, type BitableRecordLike } from './bitableToDataSet';
 import type { DataSet, LayerType, Selection, FieldDef } from '../types';
 import MapPanel from '../components/MapPanel';
 import '../index.css';
@@ -58,7 +58,7 @@ export default function FeishuPluginApp() {
     const table = await bitable.base.getTableById(tableId);
     const meta = await table.getMeta();
     setDebug(`表: ${meta.name}, 取字段...`);
-    const fList: BitableFieldLike[] = await Promise.all(((await table.getFieldList()) || []).map((f: any) => bitableFieldToLike(f)));
+    const fList: BitableFieldLike[] = ((await table.getFieldMetaList()) || []).map((f: any) => ({ id: f.id, name: f.name, type: f.type }));
     setFields(fList);
     setDebug(`字段 ${fList.length} 个, 取记录...`);
     const recordList: BitableRecordLike[] = [];
@@ -77,7 +77,7 @@ export default function FeishuPluginApp() {
   // 配置模式：读某表字段（供选坐标字段）
   const loadFieldsOfTable = useMemo(() => async (tableId: string) => {
     const table = await bitable.base.getTableById(tableId);
-    const fList: BitableFieldLike[] = await Promise.all(((await table.getFieldList()) || []).map((f: any) => bitableFieldToLike(f)));
+    const fList: BitableFieldLike[] = ((await table.getFieldMetaList()) || []).map((f: any) => ({ id: f.id, name: f.name, type: f.type }));
     setFields(fList);
     return fList;
   }, []);
