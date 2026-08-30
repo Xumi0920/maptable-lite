@@ -87,7 +87,9 @@ export function provincesToGeoFeatures(geojson: any): GeoFeature[] {
 export async function loadCityGeo(adcode: string): Promise<ProvinceFeature[]> {
   const url = `https://geo.datav.aliyun.com/areas_v3/bound/${adcode}_full.json`;
   try {
-    const res = await fetch(url);
+    // DataV 防盗链：任何带 Referer 的请求都 403（连 maptable-lite 域名都拒），只有无 Referer 才 200。
+    // 浏览器 fetch 默认带 Referer → 403。用 referrerPolicy:'no-referrer' 让浏览器不发送 Referer（等同无 Referer → 200）。
+    const res = await fetch(url, { referrerPolicy: 'no-referrer', mode: 'cors' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const geo = await res.json();
     return parseProvinces(geo);
