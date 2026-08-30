@@ -28,6 +28,7 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
   const [provinces, setProvinces] = useState<ProvinceFeature[]>([]);
   const [status, setStatus] = useState('');
   const [mapReady, setMapReady] = useState(false);
+  const [containerH, setContainerH] = useState(0);
 
   // 字段
   const regionField = useMemo(() => {
@@ -54,13 +55,28 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
     try { setProvinces(parseProvinces(provincesGeo)); } catch (e) { setStatus(`省界解析失败: ${String(e)}`); }
   }, []);
 
-  // 初始化地图
+  // 初始化地图 + 监听容器尺寸变化（飞书 iframe 里容器可能从 0px 才开始有尺寸，需 resize 重算）
   useEffect(() => {
     if (!amapReady || !containerRef.current || mapRef.current) return;
     const map = new AMap!.Map(containerRef.current, { center: [105, 36], zoom: 4 });
     mapRef.current = map;
+    // 监听容器尺寸：从0→非0 时 resize 地图，让高德适配真实尺寸（修复 iframe 容器 0px 空白）
+    const container = containerRef.current;
+    const ro = new ResizeObserver(() => {
+      const h = container.offsetHeight;
+      if (h > 0 && mapRef.current) {
+        setContainerH(h);
+        try { mapRef.current.resize?.(); } catch { /* ignore */ }
+      }
+    });
+    ro.observe(container);
     setMapReady(true);
-    return () => { try { map.destroy(); } catch { /* ignore */ } mapRef.current = null; setMapReady(false); };
+    const initialH = container.offsetHeight;
+    if (initialH > 0) setContainerH(initialH);
+    return () => {
+      ro.disconnect();
+      try { map.destroy(); } catch { /* ignore */ } mapRef.current = null; setMapReady(false);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [amapReady]);
 
@@ -142,8 +158,10 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
       </div>
       <div className="region-map-canvas" ref={containerRef} />
       {status && <div className="region-status">{status}</div>}
-      <div className="region-diag" style={{ position: 'absolute', top: 40, left: 8, fontSize: 10, color: '#999', background: 'rgba(255,255,255,.85)', padding: '4px 8px', borderRadius: 4, zIndex: 20, pointerEvents: 'none' }}>
-        高德: {amapLoading ? '加载中' + (AMap ? '' : '') : amapError ? '❌' + amapError : amapReady ? '✅ready' : '未加载'} · 容器 {containerRef.current?.offsetHeight || 0}px · 省界 {provinces.length}
+      <div className="region-diag" style={{ position: 'absolute', top: 40, left: 8, fontSize: 10, color: '#666', background: 'rgba(255,255,255,.9)', padding: '6px 10px', borderRadius: 4, zIndex: 20, pointerEvents: 'none', maxWidth: '70%', lineHeight: 1.5 }}>
+        <div>高德: {amapLoading ? '⏳加载中' : amapError ? `❌${amapError}` : amapReady ? '✅ready' : '未加载'}</div>
+        <div>容器: {containerH}px · 省界: {provinces.length} · 地图块: {polygonsRef.current.length}</div>
+        <div>{status}</div>
       </div>
       <div className="region-legend">
         {COLOR_SCALE.map((c) => <span key={c} className="region-legend-color" style={{ background: c }} />)}

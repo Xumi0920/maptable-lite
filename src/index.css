@@ -528,7 +528,7 @@ input:focus, select:focus { outline: 2px solid var(--primary-light); border-colo
 
 /* ---------- 区域地图（choropleth） ---------- */
 .region-map-view {
-  flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; background: var(--surface);
+  flex: 1; display: flex; flex-direction: column; min-height: 520px; height: 100%; position: relative; background: var(--surface);
 }
 .region-map-topbar {
   display: flex; align-items: center; gap: 10px; padding: 6px 12px;
@@ -540,7 +540,7 @@ input:focus, select:focus { outline: 2px solid var(--primary-light); border-colo
   padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
 }
 .region-back:disabled { opacity: 0.4; cursor: not-allowed; }
-.region-map-canvas { flex: 1; min-height: 0; }
+.region-map-canvas { flex: 1; min-height: 460px; height: 100%; }
 .region-status {
   position: absolute; top: 48px; left: 50%; transform: translateX(-50%);
   background: rgba(0,0,0,0.65); color: #fff; padding: 6px 14px; border-radius: 6px;
