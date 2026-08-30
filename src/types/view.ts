@@ -1,7 +1,7 @@
 // 视图领域类型：选中 / 筛选 / 排序 / 表格配置
 
 /** 视图类型（顶部 tab 切换） */
-export type ViewType = 'table' | 'kanban' | 'calendar';
+export type ViewType = 'table' | 'kanban' | 'calendar' | 'region';
 
 /** 图表/地图选中状态 */
 export interface Selection {

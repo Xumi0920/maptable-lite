@@ -1,0 +1,88 @@
+// 区域地图聚合逻辑：按行政区字段聚合统计
+// 输入：DataSet + 行政区字段 + 指标字段（可选） → 每个行政区的 计数/求和/平均
+// 输出：RegionAgg[]（regionName + 聚合值），用于区域地图分级设色
+
+import type { DataSet, FieldDef } from '../types';
+import { displayValue, fieldValue } from './utils';
+
+export type RegionAggMode = 'count' | 'sum' | 'avg' | 'max' | 'min';
+
+export interface RegionAgg {
+  name: string;         // 行政区名（如 北京 / 福建）
+  count: number;        // 记录数
+  value: number;        // 指标聚合值（未选指标时 = count）
+}
+
+/** 按行政区字段分组，对指标字段做聚合 */
+export function aggregateByRegion(
+  dataSet: DataSet,
+  regionField: FieldDef,
+  metricField?: FieldDef,
+  mode: RegionAggMode = 'count',
+): RegionAgg[] {
+  const map = new Map<string, { count: number; sum: number; max: number; min: number; vals: number[] }>();
+
+  for (const id of dataSet.rowIds) {
+    const row = dataSet.rows[id] || {};
+    // 行政区值
+    const rawRegion = fieldValue(row, regionField);
+    if (rawRegion == null || rawRegion === '') continue;
+    const regionName = displayValue(regionField, rawRegion).trim();
+    if (!regionName) continue;
+
+    let entry = map.get(regionName);
+    if (!entry) {
+      entry = { count: 0, sum: 0, max: -Infinity, min: Infinity, vals: [] };
+      map.set(regionName, entry);
+    }
+    entry.count += 1;
+
+    // 指标值
+    if (metricField) {
+      const rawVal = fieldValue(row, metricField);
+      const n = Number(rawVal);
+      if (rawVal != null && rawVal !== '' && isFinite(n)) {
+        entry.sum += n;
+        entry.vals.push(n);
+        if (n > entry.max) entry.max = n;
+        if (n < entry.min) entry.min = n;
+      }
+    }
+  }
+
+  const result: RegionAgg[] = [];
+  for (const [name, e] of map) {
+    let value = e.count;
+    if (metricField) {
+      switch (mode) {
+        case 'sum': value = e.sum; break;
+        case 'avg': value = e.vals.length ? e.sum / e.vals.length : 0; break;
+        case 'max': value = e.max === -Infinity ? 0 : e.max; break;
+        case 'min': value = e.min === Infinity ? 0 : e.min; break;
+        default: value = e.count;
+      }
+    }
+    result.push({ name, count: e.count, value });
+  }
+
+  // 按 value 降序
+  return result.sort((a, b) => b.value - a.value);
+}
+
+/** 自动识别行政区字段（名字含 省/市/区/城市/地区/区域/地区名/位置/省份/城市名，或 select 类型） */
+export function findRegionField(dataSet: DataSet): FieldDef | undefined {
+  const fields = dataSet.fields;
+  // 优先：名字含行政区关键词
+  const kw = fields.find((f) =>
+    /省份|省市|城市|城市名|地区|行政|区域|区县|省$|市$|区$/i.test(f.name) ||
+    /province|city|region|district|area|state|country|region_name|city_name/i.test(f.name)
+  );
+  if (kw) return kw;
+  // 其次：select 类型字段（通常行政区是单选）
+  return fields.find((f) => f.type === 'select');
+}
+
+/** 自动识别指标字段（优先 number 类型） */
+export function findMetricField(dataSet: DataSet): FieldDef | undefined {
+  return dataSet.fields.find((f) => f.type === 'number');
+}

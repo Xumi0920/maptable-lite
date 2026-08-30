@@ -16,6 +16,7 @@ export interface AMapGlobal {
   InfoWindow: any;
   Geocoder: any;
   PlaceSearch: any;
+  DistrictSearch: any;
   LngLat: any;
   Pixel: any;
   MapType: any;
@@ -61,6 +62,7 @@ export function useAMap(): { AMap: AMapGlobal | null; loading: boolean; error: s
         'AMap.ToolBar',
         'AMap.Scale',
         'AMap.MapType',
+        'AMap.DistrictSearch',
       ],
     })
       .then((AMap: AMapGlobal) => {

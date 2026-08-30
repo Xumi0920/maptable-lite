@@ -18,6 +18,9 @@ export { default as FieldsDrawer, FIELD_TYPE_OPTIONS } from './components/drawer
 // 工具（常用）
 export { parseCoordinate, applyFilters, applySorts, displayValue, uid } from './lib/utils';
 
+// 区域地图聚合
+export { aggregateByRegion, findRegionField, findMetricField, type RegionAgg, type RegionAggMode } from './lib/regions';
+
 // 飞书多维表格适配器（数据源转换）
 export {
   pullFromFeishu, pushToFeishu, getTenantToken,

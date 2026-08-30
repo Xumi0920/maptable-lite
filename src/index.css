@@ -525,3 +525,36 @@ input:focus, select:focus { outline: 2px solid var(--primary-light); border-colo
 }
 .cal-event:hover { background: #dbe8ff; }
 .cal-event.selected { background: var(--primary); color: #fff; }
+
+/* ---------- 区域地图（choropleth） ---------- */
+.region-map-view {
+  flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; background: var(--surface);
+}
+.region-map-topbar {
+  display: flex; align-items: center; gap: 10px; padding: 6px 12px;
+  border-bottom: 1px solid var(--border); background: #fafbfc; font-size: 13px;
+}
+.region-path { display: flex; flex-wrap: wrap; gap: 2px; }
+.region-back {
+  border: 1px solid var(--border); background: #fff; color: var(--text);
+  padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+}
+.region-back:disabled { opacity: 0.4; cursor: not-allowed; }
+.region-map-canvas { flex: 1; min-height: 0; }
+.region-status {
+  position: absolute; top: 48px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.65); color: #fff; padding: 6px 14px; border-radius: 6px;
+  font-size: 12px; z-index: 20; pointer-events: none;
+}
+.region-legend {
+  position: absolute; right: 12px; bottom: 12px; z-index: 20;
+  background: rgba(255,255,255,0.92); border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 10px; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.region-legend-color { display: block; height: 12px; width: 120px; border-radius: 2px; }
+.region-legend-label { font-size: 11px; color: var(--muted); text-align: center; }
+.region-tooltip {
+  position: fixed; z-index: 9999; pointer-events: none; display: none;
+  background: rgba(0,0,0,0.78); color: #fff; padding: 5px 9px; border-radius: 5px;
+  font-size: 12px; white-space: nowrap;
+}
