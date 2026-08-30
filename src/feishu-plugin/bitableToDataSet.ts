@@ -22,6 +22,26 @@ export interface BitableRecordLike {
   getCellByField: (fieldId: string) => Promise<{ getValue: () => Promise<unknown> }>;
 }
 
+/**
+ * 把 SDK 的 IField 对象转成同步结构 { id, name, type }。
+ * 注意：SDK 的 IField 里 name/type 是【异步方法】getName()/getType()（非属性），
+ * 直接读 f.name/f.type 会是 undefined/函数，导致下拉为空。必须 await。
+ */
+export async function bitableFieldToLike(f: any): Promise<BitableFieldLike> {
+  // id 是同步属性；name/type 是异步方法
+  const id = f.id;
+  let name = f.name;
+  let type: number | string = f.type;
+  try {
+    if (typeof f.getName === 'function') name = await f.getName();
+  } catch { /* ignore */ }
+  try {
+    if (typeof f.getType === 'function') type = await f.getType();
+  } catch { /* ignore */ }
+  // getType 返回 FieldType 枚举值（数字），直接保留
+  return { id, name: name || '字段', type };
+}
+
 /** 从 bitable 字段数组转 FieldDef（含单选 options） */
 export function fieldsFromBitable(fieldList: BitableFieldLike[]): FieldDef[] {
   return fieldList.map((f) => {
