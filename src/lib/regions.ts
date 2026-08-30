@@ -69,16 +69,26 @@ export function aggregateByRegion(
   return result.sort((a, b) => b.value - a.value);
 }
 
-/** 自动识别行政区字段（名字含 省/市/区/城市/地区/区域/地区名/位置/省份/城市名，或 select 类型） */
+/** 自动识别行政区字段（优先省，再市/地区；省>市，因为区域地图用省界 GeoJSON 着色） */
 export function findRegionField(dataSet: DataSet): FieldDef | undefined {
   const fields = dataSet.fields;
-  // 优先：名字含行政区关键词
-  const kw = fields.find((f) =>
-    /省份|省市|城市|城市名|地区|行政|区域|区县|省$|市$|区$/i.test(f.name) ||
-    /province|city|region|district|area|state|country|region_name|city_name/i.test(f.name)
+  // 1. 优先：省 / province（能匹配省界 GeoJSON，否则城市数据匹配不到省界）
+  const prov = fields.find((f) =>
+    /省份|省市|省名|省$|province|province_name|province_name/i.test(f.name) ||
+    /^省$/i.test(f.name)
   );
-  if (kw) return kw;
-  // 其次：select 类型字段（通常行政区是单选）
+  if (prov) return prov;
+  // 2. 其次：城市 / city
+  const city = fields.find((f) =>
+    /城市|城市名|市$|city|city_name|municipality/i.test(f.name)
+  );
+  if (city) return city;
+  // 3. 地区 / region / district / area / state
+  const region = fields.find((f) =>
+    /地区|行政|区域|区县|区$|region|district|area|state|country/i.test(f.name)
+  );
+  if (region) return region;
+  // 4. 最后：select 类型字段（通常行政区是单选）
   return fields.find((f) => f.type === 'select');
 }
 
