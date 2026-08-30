@@ -17,8 +17,18 @@ export interface RegionMapPanelProps {
   mode?: RegionAggMode;
 }
 
-// 色阶（浅→深 5 档，橙色系）
-const COLOR_SCALE = ['#ffe9c7', '#ffd394', '#ffb45e', '#ff8f33', '#f2721a'];
+// 配色主题（5 档色阶，浅→深）。切换后 legend 与 polygon 同步
+export type ColorThemeKey = 'orange' | 'green' | 'blue' | 'purple' | 'teal' | 'red';
+const COLOR_THEMES: Record<ColorThemeKey, string[]> = {
+  orange: ['#ffe9c7', '#ffd394', '#ffb45e', '#ff8f33', '#f2721a'],
+  green: ['#e4f4d7', '#c3e89a', '#97d457', '#6abf2d', '#4a9e1c'],
+  blue: ['#e0edff', '#b8d5ff', '#85b8ff', '#4f97ff', '#2f74e0'],
+  purple: ['#f0e8ff', '#d3bfff', '#ad8cff', '#8a5cf5', '#6d3fd0'],
+  teal: ['#dff5f0', '#a8e8dc', '#6fd6c0', '#3fbfa5', '#2a9d8a'],
+  red: ['#ffe5e0', '#ffbdb0', '#ff9285', '#f5655e', '#d93b33'],
+};
+const DEFAULT_THEME: ColorThemeKey = 'orange';
+const THEME_LABEL: Record<ColorThemeKey, string> = { orange: '橙色', green: '绿色', blue: '蓝色', purple: '紫色', teal: '青色', red: '红色' };
 
 export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, mode = 'sum' }: RegionMapPanelProps) {
   const { AMap, loading: amapLoading, ready: amapReady, error: amapError } = useAMap();
@@ -31,6 +41,9 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
   const [mapReady, setMapReady] = useState(false);
   const [containerH, setContainerH] = useState(0);
   const [showDiag, setShowDiag] = useState(false);
+  const [colorTheme, setColorTheme] = useState<ColorThemeKey>(() => (localStorage.getItem('maptable-lite:region-theme') as ColorThemeKey) || DEFAULT_THEME);
+  const colorScale = COLOR_THEMES[colorTheme] || COLOR_THEMES[DEFAULT_THEME];
+  const changeColorTheme = (k: ColorThemeKey) => { setColorTheme(k); try { localStorage.setItem('maptable-lite:region-theme', k); } catch { /* ignore */ } };
   const [level, setLevel] = useState<'province' | 'city'>('province');
   const [parentRegion, setParentRegion] = useState<{ name: string; adcode: string } | null>(null);
   const [cityLoading, setCityLoading] = useState(false);
@@ -104,10 +117,10 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
     if (!entry) return '#f0f1f3';
     const vals = Object.values(regionMap).map((v) => v.value);
     const min = Math.min(...vals), max = Math.max(...vals);
-    if (max <= min) return COLOR_SCALE[4];
+    if (max <= min) return colorScale[4];
     const idx = Math.max(0, Math.min(4, Math.floor(((entry[1].value - min) / (max - min)) * 5)));
-    return COLOR_SCALE[idx];
-  }, [regionMap]);
+    return colorScale[idx];
+  }, [regionMap, colorScale]);
 
   // 下钻：点省级 polygon → 按 adcode 拉该省市界 → 渲染市级 choropleth（用城市字段聚合）
   const drillDown = useCallback(async (prov: ProvinceFeature) => {
@@ -200,6 +213,11 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
         <button className="region-back" style={{ padding: '3px 10px', fontSize: 11 }} onClick={() => setShowDiag((s) => !s)}>
           {showDiag ? '隐藏诊断' : '诊断'}
         </button>
+        <select className="region-back" value={colorTheme} onChange={(e) => changeColorTheme(e.target.value as ColorThemeKey)} style={{ padding: '3px 8px', fontSize: 11, cursor: 'pointer' }} title="配色主题">
+          {Object.keys(COLOR_THEMES).map((k) => (
+            <option key={k} value={k}>{THEME_LABEL[k as ColorThemeKey]}</option>
+          ))}
+        </select>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>
           {activeRegionField?.name || regionField?.name || '?'} × {metricField ? metricField.name : '计数'}（{modeLabel(mode)}）
         </span>
@@ -217,7 +235,7 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
         </div>
       )}
       <div className="region-legend">
-        {COLOR_SCALE.map((c) => <span key={c} className="region-legend-color" style={{ background: c }} />)}
+        {colorScale.map((c) => <span key={c} className="region-legend-color" style={{ background: c }} />)}
         <div className="region-legend-label">低 → 高</div>
       </div>
     </div>

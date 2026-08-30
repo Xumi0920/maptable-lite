@@ -33,24 +33,32 @@ function coordsToPaths(geometry?: { type: string; coordinates: unknown }): [numb
   const t = geometry.type;
   const c = geometry.coordinates;
   const out: [number, number][][] = [];
-  const flatten = (ring: unknown): [number, number][] => {
+  // 过滤相邻点跳变 >1.5° 的异常段（跨海/跨省基线 → 会渲染成长线伪影，跳过）
+  const clean = (ring: unknown): [number, number][] | null => {
     const arr = ring as any[];
-    if (!Array.isArray(arr) || arr.length < 3) return [];
-    return arr.map((p) => [Number(p[0]), Number(p[1])] as [number, number]).filter(([x, y]) => isFinite(x) && isFinite(y));
+    if (!Array.isArray(arr) || arr.length < 3) return null;
+    const pts = arr.map((p) => [Number(p[0]), Number(p[1])] as [number, number]).filter(([x, y]) => isFinite(x) && isFinite(y));
+    if (pts.length < 3) return null;
+    let maxStep = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const ds = Math.abs(pts[i][0] - pts[i + 1][0]) + Math.abs(pts[i][1] - pts[i + 1][1]);
+      if (ds > maxStep) maxStep = ds;
+    }
+    // 闭合 polygon 首尾跳变允许较大（正常），只看中间相邻点：>1.5° 视为异常
+    return maxStep > 1.5 ? null : pts;
   };
   if (t === 'Polygon') {
     const rings = c as any[];
-    if (Array.isArray(rings) && rings.length) out.push(flatten(rings[0]));  // 外环
+    if (Array.isArray(rings) && rings.length) { const p = clean(rings[0]); if (p) out.push(p); }
   } else if (t === 'MultiPolygon') {
     const polys = c as any[];
     if (Array.isArray(polys)) {
       for (const poly of polys) {
         const rings = poly as any[];
-        if (Array.isArray(rings) && rings.length) out.push(flatten(rings[0]));
+        if (Array.isArray(rings) && rings.length) { const p = clean(rings[0]); if (p) out.push(p); }
       }
     }
   }
-  // LineString 等非面类型忽略（区域地图只需面）
   return out;
 }
 
