@@ -1,9 +1,9 @@
 // 飞书多维表格仪表盘插件主组件
-// 配置模式：读当前表字段，选地图坐标字段（地理位置类）→ dashboard.saveConfig
-// 展示模式：读当前表字段+记录 → DataSet → 渲染高德地图（复用 MapPanel）+ 统计 + 表格
+// 配置模式：getTableList 列所有表→选表→读该表字段→选坐标字段→dashboard.saveConfig
+// 展示模式：用配置保存的 tableId，getTableById 读该表字段+记录→DataSet→渲染高德地图
 //
-// 依赖注入：此文件 import MapPanel / dataSetFromBitable / useTheme / useConfig。
-// 在高德 key 未配置时降级提示（同主应用）。
+// 关键：配置模式下 getActiveTable() 会抛 "table not found error"（配置面板不绑定到具体表视图），
+// 所以配置模式和展示模式都用"显式 tableId"（getTableList/getTableById），不依赖 getActiveTable。
 
 import { useEffect, useMemo, useState } from 'react';
 import { bitable } from '@lark-base-open/js-sdk';
@@ -14,12 +14,14 @@ import MapPanel from '../components/MapPanel';
 import '../index.css';
 
 interface PluginConfig {
-  coordFieldId: string;    // 地图坐标字段（bitable field id / name）
-  coordFieldName: string;  // 展示用
-  tableId: string;
+  tableId: string;         // 数据表 id
+  coordFieldId: string;    // 地图坐标字段 id
+  coordFieldName: string;  // 坐标字段名（展示/兜底）
 }
 
-const DEFAULT_CONFIG: PluginConfig = { coordFieldId: '', coordFieldName: '', tableId: '' };
+const DEFAULT_CONFIG: PluginConfig = { tableId: '', coordFieldId: '', coordFieldName: '' };
+
+interface TableMeta { id: string; name: string }
 
 export default function FeishuPluginApp() {
   const { bgColor, theme } = useTheme();
@@ -27,29 +29,40 @@ export default function FeishuPluginApp() {
 
   const [dataSet, setDataSet] = useState<DataSet | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tables, setTables] = useState<TableMeta[]>([]);
   const [fields, setFields] = useState<BitableFieldLike[]>([]);
   const [fieldError, setFieldError] = useState('');
-  const [tableId, setTableId] = useState('');
   const [layer, setLayer] = useState<LayerType>('scatter');
   const [selection, setSelection] = useState<Selection>({ rowIds: [] });
 
   const hasKey = (import.meta.env.VITE_AMAP_KEY as string) || '';
 
-  // 读取当前数据表字段 + 记录（展示模式）
-  const loadData = useMemo(() => async () => {
-    const table = await bitable.base.getActiveTable();
-    const meta = await table.getMeta();
-    setTableId(meta.id);
+  // 拉取当前多维表格下的所有表（配置/展示都用，不依赖 getActiveTable）
+  const loadTableList = useMemo(() => async () => {
+    const metas = await bitable.base.getTableMetaList();
+    const list: TableMeta[] = (metas || []).map((m: any) => ({ id: m.id, name: m.name }));
+    setTables(list);
+    return list;
+  }, []);
+
+  // 读取指定表的字段
+  const loadFieldsOfTable = useMemo(() => async (tableId: string) => {
+    const table = await bitable.base.getTableById(tableId);
     const fList: BitableFieldLike[] = await Promise.all(((await table.getFieldList()) || []).map((f: any) => bitableFieldToLike(f)));
     setFields(fList);
-    // IRecordList 可迭代但非数组，用 for...of 遍历
+    return fList;
+  }, []);
+
+  // 读取指定表 字段+记录 → DataSet（展示模式）
+  const loadData = useMemo(() => async (tableId: string) => {
+    const table = await bitable.base.getTableById(tableId);
+    const meta = await table.getMeta();
+    const fList: BitableFieldLike[] = await Promise.all(((await table.getFieldList()) || []).map((f: any) => bitableFieldToLike(f)));
+    setFields(fList);
     const recordList: BitableRecordLike[] = [];
     const list = await table.getRecordList();
     for await (const rec of list) {
-      recordList.push({
-        recordId: rec.id,
-        getCellByField: (fieldId: string) => rec.getCellByField(fieldId),
-      });
+      recordList.push({ recordId: rec.id, getCellByField: (fieldId: string) => rec.getCellByField(fieldId) });
     }
     const ds = await dataSetFromBitable(fList, recordList, meta.name || '飞书多维表格');
     setDataSet(ds);
@@ -57,27 +70,50 @@ export default function FeishuPluginApp() {
     setRendered(2500);
   }, []);
 
+  // 首次加载表列表
   useEffect(() => {
-    if (!isConfig) {
-      loadData();
-    } else {
-      // 配置模式：只读字段，用于选坐标字段
-      (async () => {
-        try {
-          setFieldError('');
-          const table = await bitable.base.getActiveTable();
-          const fList: BitableFieldLike[] = await Promise.all(((await table.getFieldList()) || []).map((f: any) => bitableFieldToLike(f)));
-          setFields(fList);
-          setLoading(false);
-        } catch (e: any) {
-          // 暴露真实错误（配置模式下 getActiveTable/getFieldList 可能不可用）
-          setFieldError(String(e?.message || e));
-          setFields([]);
+    (async () => {
+      try {
+        const list = await loadTableList();
+        // 展示模式：用配置中保存的 tableId 直接读数据；若无则用第一张表兜底
+        const useTableId = config.tableId || list[0]?.id || '';
+        if (!isConfig && useTableId) {
+          setTableSelection(useTableId);
+          await loadData(useTableId);
+        } else if (!isConfig) {
           setLoading(false);
         }
-      })();
+        // 配置模式：选表后由用户交互决定，默认预选第一张表并读其字段
+        if (isConfig && useTableId) {
+          setTableSelection(useTableId);
+          try {
+            await loadFieldsOfTable(useTableId);
+            setFieldError('');
+          } catch (e: any) {
+            setFieldError(String(e?.message || e));
+          }
+        }
+      } catch (e: any) {
+        setFieldError(String(e?.message || e));
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 配置模式：切换表 → 重读字段
+  const [tableSelection, setTableSelection] = useState('');
+  const onTableChange = async (tableId: string) => {
+    setTableSelection(tableId);
+    setConfig((prev) => ({ ...prev, tableId, coordFieldId: '', coordFieldName: '' }));
+    try {
+      setFieldError('');
+      await loadFieldsOfTable(tableId);
+    } catch (e: any) {
+      setFieldError(String(e?.message || e));
+      setFields([]);
     }
-  }, [isConfig]);
+  };
 
   // 坐标字段：地理位置(22)优先，否则含"坐标/位置/lng/lat/经纬"的字段
   const coordField = useMemo<FieldDef | undefined>(() => {
@@ -105,22 +141,34 @@ export default function FeishuPluginApp() {
       <main style={{ backgroundColor: bgColor, padding: 16, fontFamily: 'inherit', minHeight: '100vh', color: theme === 'dark' ? '#e5e6eb' : '#1f2329' }}>
         <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>地图组件配置</h3>
 
+        {/* 选择数据表 */}
+        <div style={{ fontSize: 13, marginBottom: 6 }}>数据表：</div>
+        <select
+          value={tableSelection}
+          onChange={(e) => onTableChange(e.target.value)}
+          style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13 }}
+        >
+          {tables.length === 0 && <option value="">（加载表列表…）</option>}
+          {tables.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+
         {/* 字段读取诊断 */}
         {fieldError ? (
-          <div style={{ background: '#fff1f0', color: '#d4380d', padding: '8px 10px', borderRadius: 6, fontSize: 12, marginBottom: 10, wordBreak: 'break-all' }}>
+          <div style={{ background: '#fff1f0', color: '#d4380d', padding: '8px 10px', borderRadius: 6, fontSize: 12, marginTop: 10, wordBreak: 'break-all' }}>
             ⚠ 读取字段失败：{fieldError}
           </div>
-        ) : fields.length === 0 ? (
-          <div style={{ color: '#8a919f', fontSize: 12, marginBottom: 10 }}>正在读取字段…</div>
+        ) : fields.length > 0 ? (
+          <div style={{ color: '#52c41a', fontSize: 12, marginTop: 10 }}>✓ 已读取 {fields.length} 个字段</div>
         ) : (
-          <div style={{ color: '#52c41a', fontSize: 12, marginBottom: 10 }}>✓ 已读取 {fields.length} 个字段</div>
+          <div style={{ color: '#8a919f', fontSize: 12, marginTop: 10 }}>正在读取字段…</div>
         )}
 
-        <div style={{ fontSize: 13, marginBottom: 8 }}>选择要在地图上定位的「坐标字段」：</div>
+        {/* 选择坐标字段 */}
+        <div style={{ fontSize: 13, marginTop: 12, marginBottom: 6 }}>选择要在地图上定位的「坐标字段」：</div>
         {fields.length > 0 ? (
           <select
             value={selId}
-            onChange={(e) => setConfig((prev) => ({ ...prev, coordFieldId: e.target.value, coordFieldName: coordCandidates.find((c) => c.id === e.target.value)?.name || '', tableId }))}
+            onChange={(e) => setConfig((prev) => ({ ...prev, coordFieldId: e.target.value, coordFieldName: coordCandidates.find((c) => c.id === e.target.value)?.name || '', tableId: tableSelection }))}
             style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13 }}
           >
             {coordCandidates.map((c) => (
@@ -136,8 +184,9 @@ export default function FeishuPluginApp() {
             style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, boxSizing: 'border-box' }}
           />
         )}
+
         <button
-          onClick={() => { saveConfig({ ...config, coordFieldId: selId, coordFieldName: fields.length ? selName : config.coordFieldName, tableId }); }}
+          onClick={() => saveConfig({ ...config, tableId: tableSelection, coordFieldId: fields.length ? selId : '', coordFieldName: fields.length ? selName : config.coordFieldName })}
           style={{ marginTop: 14, padding: '8px 20px', borderRadius: 6, border: 'none', background: '#3370ff', color: '#fff', fontSize: 13, cursor: 'pointer' }}
         >保存</button>
         <div style={{ fontSize: 11, color: '#8a919f', marginTop: 12 }}>
@@ -151,7 +200,7 @@ export default function FeishuPluginApp() {
   return (
     <main style={{ backgroundColor: bgColor, minHeight: '100vh', display: 'flex', flexDirection: 'column', color: theme === 'dark' ? '#e5e6eb' : '#1f2329' }}>
       {!hasKey && (
-        <div style={{ padding: 12, background: '#fff7e6', color: '#d48806', fontSize: 13 }}>⚠ 未配置高德地图 Key（VITE_AMAP_KEY），地图无法加载。请在部署环境变量中配置。</div>
+        <div style={{ padding: 12, background: '#fff7e6', color: '#d48806', fontSize: 13 }}>⚠ 未配置高德地图 Key（VITE_AMAP_KEY），地图无法加载。</div>
       )}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div style={{ textAlign: 'center', padding: '6px 0', fontSize: 12, color: '#8a919f' }}>
@@ -160,21 +209,12 @@ export default function FeishuPluginApp() {
         <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
           {loading && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8a919f' }}>加载中…</div>}
           {!loading && dataSet && (
-            <MapPanel
-              dataSet={dataSet}
-              coordField={coordField}
-              layer={layer}
-              onLayerChange={setLayer}
-              selection={selection}
-              onSelectRows={(rows) => setSelection({ rowIds: rows })}
-              onCoordFieldChange={() => {}}
-            />
+            <MapPanel dataSet={dataSet} coordField={coordField} layer={layer} onLayerChange={setLayer} selection={selection}
+              onSelectRows={(rows) => setSelection({ rowIds: rows })} onCoordFieldChange={() => {}} />
           )}
-          {!loading && !dataSet && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8a919f' }}>当前表没有可显示的数据</div>}
+          {!loading && !dataSet && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8a919f' }}>请先在配置模式选择表和坐标字段</div>}
         </div>
       </div>
-
-      {/* 字段统计（迷你） */}
       {dataSet && (
         <div style={{ padding: '8px 14px', borderTop: '1px solid rgba(0,0,0,0.06)', fontSize: 12 }}>
           <span style={{ marginRight: 12 }}>记录: {dataSet.rowIds.length}</span>
