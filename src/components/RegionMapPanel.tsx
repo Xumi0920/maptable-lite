@@ -20,7 +20,7 @@ export interface RegionMapPanelProps {
 const COLOR_SCALE = ['#ffe9c7', '#ffd394', '#ffb45e', '#ff8f33', '#f2721a'];
 
 export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, mode = 'sum' }: RegionMapPanelProps) {
-  const { AMap, ready: amapReady, error: amapError } = useAMap();
+  const { AMap, loading: amapLoading, ready: amapReady, error: amapError } = useAMap();
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const polygonsRef = useRef<any[]>([]);
@@ -142,6 +142,9 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
       </div>
       <div className="region-map-canvas" ref={containerRef} />
       {status && <div className="region-status">{status}</div>}
+      <div className="region-diag" style={{ position: 'absolute', top: 40, left: 8, fontSize: 10, color: '#999', background: 'rgba(255,255,255,.85)', padding: '4px 8px', borderRadius: 4, zIndex: 20, pointerEvents: 'none' }}>
+        高德: {amapLoading ? '加载中' + (AMap ? '' : '') : amapError ? '❌' + amapError : amapReady ? '✅ready' : '未加载'} · 容器 {containerRef.current?.offsetHeight || 0}px · 省界 {provinces.length}
+      </div>
       <div className="region-legend">
         {COLOR_SCALE.map((c) => <span key={c} className="region-legend-color" style={{ background: c }} />)}
         <div className="region-legend-label">低 → 高</div>
