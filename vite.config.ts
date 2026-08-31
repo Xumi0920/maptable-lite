@@ -24,5 +24,13 @@ export default defineConfig({
         },
       },
     },
+    // 主应用 index.html 的 modulepreload 会保守地预加载所有 shared chunk（含 feishu-sdk 966KB），
+    // 但主应用根本不用飞书 SDK。这里从预加载列表里排除 feishu-sdk：主应用不预取它，
+    // 飞书插件运行时仍会通过 import 按需加载（preload 只是提前预取，不影响功能）。
+    modulePreload: {
+      resolveDependencies(_filename: string, dependencies: string[]) {
+        return dependencies.filter((dep) => !dep.includes('feishu-sdk'))
+      },
+    },
   },
 })
