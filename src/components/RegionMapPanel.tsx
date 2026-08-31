@@ -1,6 +1,6 @@
 // 区域地图组件：按行政区聚合着色（choropleth）—— 用内置省界 GeoJSON 实现
 // 不依赖高德 DistrictSearch（该插件在 iframe/安全码环境易不回调），静态打包省界，稳定可靠
-// 支持：省级渲染 + 按省份字段聚合着色（模糊匹配 福建↔福建省）+ 悬停 tooltip + 下钻(预留)
+// 支持：省级渲染 + 按省份字段聚合着色（模糊匹配 福建↔福建省）+ 悬停 tooltip + 下钻 + 地域筛选 + 明细弹窗
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useAMap } from '../lib/useAMap';
@@ -48,6 +48,11 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
   const [parentRegion, setParentRegion] = useState<{ name: string; adcode: string } | null>(null);
   const [cityLoading, setCityLoading] = useState(false);
   const [detailRegion, setDetailRegion] = useState<{ name: string; adcode: string; level: 'province' | 'city' } | null>(null);
+  // 地域筛选：选中某地域（归一化值）后，仅保留该地域的记录用于地图聚合
+  const [filterRegion, setFilterRegion] = useState<string | null>(null);
+
+  // 固定省级列表（范围下拉用，不随下钻变化）
+  const provinceList = useMemo(() => parseProvinces(provincesGeo), []);
 
   // 字段
   const regionField = useMemo(() => {
@@ -64,15 +69,46 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
   // 当前聚合用的行政区字段：省级=省份字段，下钻=城市字段
   const activeRegionField = useMemo(() => (level === 'city' ? (cityField || regionField) : regionField), [level, cityField, regionField]);
 
-  // 聚合结果：行政区名(归一化) → 值
+  // 地域筛选可用值：从省份字段(或城市字段)的去重值生成。归一化后按字符排序，供下拉
+  const regionOptions = useMemo(() => {
+    const f = level === 'city' ? cityField : regionField;
+    if (!f) return [];
+    const set = new Set<string>();
+    for (const id of dataSet.rowIds) {
+      const v = fieldValue(dataSet.rows[id], f);
+      if (v != null && String(v).trim()) set.add(String(v).trim());
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'zh'));
+  }, [dataSet, regionField, cityField, level]);
+
+  // 地域筛选后的数据：filterRegion 为空则全量；否则保留 activeRegionField 归一化值等于 filterRegion（同样归一化）的记录
+  const filteredDataSet = useMemo<DataSet>(() => {
+    if (!filterRegion) return dataSet;
+    const f = activeRegionField;
+    if (!f) return dataSet;
+    const target = normalizeRegionName(filterRegion);
+    const keptRows: typeof dataSet.rows = {};
+    const keptIds: string[] = [];
+    for (const id of dataSet.rowIds) {
+      const v = fieldValue(dataSet.rows[id], f);
+      if (v == null) continue;
+      if (normalizeRegionName(String(v)) === target) {
+        keptRows[id] = dataSet.rows[id];
+        keptIds.push(id);
+      }
+    }
+    return { ...dataSet, rows: keptRows, rowIds: keptIds };
+  }, [dataSet, filterRegion, activeRegionField]);
+
+  // 聚合结果：行政区名(归一化) → 值。基于 filteredDataSet，地域筛选后地图会随筛选重算
   const regionMap = useMemo<Record<string, { name: string; value: number }>>(() => {
     const map: Record<string, { name: string; value: number }> = {};
     if (!activeRegionField) return map;
-    for (const agg of aggregateByRegion(dataSet, activeRegionField, metricField, mode)) {
+    for (const agg of aggregateByRegion(filteredDataSet, activeRegionField, metricField, mode)) {
       map[agg.name] = { name: agg.name, value: agg.value };
     }
     return map;
-  }, [dataSet, activeRegionField, metricField, mode]);
+  }, [filteredDataSet, activeRegionField, metricField, mode]);
 
   // 弹窗聚合值：detailRegion 在 regionMap 中的值
   const regionMapEntry = useMemo(() => {
@@ -126,7 +162,7 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [amapReady]);
 
-  // 根据省名算颜色（用 matchProvince 归一化匹配到 GeoJSON 省，再匹配聚合值）
+  // 根据省名算颜色（用 normalizeRegionName 归一化匹配到 GeoJSON 省，再匹配聚合值）
   const colorOf = useCallback((provinceName: string): string => {
     // provinceName 是 GeoJSON 省名（如"北京市"），归一化后去 regionMap 找用户数据的省
     const geoNorm = normalizeRegionName(provinceName);
@@ -139,7 +175,7 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
     return colorScale[idx];
   }, [regionMap, colorScale]);
 
-  // 下钻：点省级 polygon → 按 adcode 拉该省市界 → 渲染市级 choropleth（用城市字段聚合）
+  // 下钻：点省级 polygon → 按 adcode 拉该省市界 → 渲染市级 choropleth（用城市字段聚合）。切市级时清空地域筛选，避免残留导致地图空白
   const drillDown = useCallback(async (prov: ProvinceFeature) => {
     if (!prov?.adcode) return;
     setStatus(`加载 ${prov.name} 市级数据...`);
@@ -150,19 +186,40 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
       setProvinces(cities);
       setParentRegion({ name: prov.name, adcode: prov.adcode });
       setLevel('city');
+      setFilterRegion(null);
       setStatus('');
     } catch (e: any) {
       setStatus(String(e?.message || e));
     }
     setCityLoading(false);
   }, []);
-  // 返回上一级（回到全国省级）
+  // 返回上一级（回到全国省级）；同时清空地域筛选，避免筛选残留
   const goBack = useCallback(() => {
     try { setProvinces(parseProvinces(provincesGeo)); } catch { /* ignore */ }
     setParentRegion(null);
     setLevel('province');
+    setFilterRegion(null);
     setStatus('');
   }, []);
+
+  // 选范围跳到某省（范围选择器用）：选省 → loadCityGeo 拉市级视图；选'全国'回省级并清筛选
+  const jumpToProvince = useCallback(async (provName: string) => {
+    if (provName === '全国') { goBack(); return; }
+    const prov = provinceList.find(p => normalizeRegionName(p.name) === normalizeRegionName(provName));
+    if (!prov?.adcode) { setStatus('未找到该省'); return; }
+    setStatus(`加载 ${prov.name} 市级数据...`);
+    setCityLoading(true);
+    try {
+      const cities = await loadCityGeo(prov.adcode);
+      if (!cities.length) { setStatus(`${prov.name} 暂无市级边界`); setCityLoading(false); return; }
+      setProvinces(cities);
+      setParentRegion({ name: prov.name, adcode: prov.adcode });
+      setLevel('city');
+      setFilterRegion(null);
+      setStatus('');
+    } catch (e: any) { setStatus(String(e?.message || e)); }
+    setCityLoading(false);
+  }, [provinceList, goBack]);
 
   // 渲染省界 polygon
   useEffect(() => {
@@ -226,6 +283,14 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
     <div className="region-map-view">
       <div className="region-map-topbar">
         <span className="region-path">中国{parentRegion ? <>{parentRegion.name}</> : ''}</span>
+        <select className="region-back" value={parentRegion?.name || '全国'} onChange={(e) => jumpToProvince(e.target.value)} style={{ padding: '3px 8px', fontSize: 11, cursor: 'pointer', marginLeft: 6 }} title="范围：选省直跳到该省市级视图">
+          <option value="全国">全国</option>
+          {provinceList.map((p) => <option key={p.adcode} value={p.name}>{p.name}</option>)}
+        </select>
+        <select className="region-back" value={filterRegion || '全部'} onChange={(e) => setFilterRegion(e.target.value === '全部' ? null : e.target.value)} style={{ padding: '3px 8px', fontSize: 11, cursor: 'pointer', marginLeft: 6 }} title="地域筛选：仅显示选定地域的记录">
+          <option value="全部">全部</option>
+          {regionOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
         <div className="spacer" />
         {parentRegion && (
           <button className="region-back" onClick={goBack}>← 返回上一级</button>
@@ -239,7 +304,7 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
           ))}
         </select>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-          {activeRegionField?.name || regionField?.name || '?'} × {metricField ? metricField.name : '计数'}（{modeLabel(mode)}）
+          {activeRegionField?.name || regionField?.name || '?'} × {metricField ? metricField.name : '计数'}（{modeLabel(mode)}）{filterRegion ? ` · 筛选:${filterRegion}` : ''}
         </span>
       </div>
       <div className="region-map-canvas" ref={containerRef} />
@@ -250,7 +315,7 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
           <div>高德: {amapLoading ? '⏳加载中' : amapError ? `❌${amapError}` : amapReady ? '✅ready' : '未加载'}</div>
           <div>容器: {containerH}px · 省界: {provinces.length} · 地图块: {polygonsRef.current.length}</div>
           <div>行政区: {regionField?.name || '?'} · 聚合: {Object.keys(regionMap).length} 省 {Object.keys(regionMap).slice(0, 6).join(',')}</div>
-          <div>省份值样本: {provSample || '(空)'}</div>
+          <div>筛选: {filterRegion || '(全部)'} · 值样本: {provSample || '(空)'}</div>
           <div>{status}</div>
         </div>
       )}
