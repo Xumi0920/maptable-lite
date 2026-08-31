@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useAMap } from '../lib/useAMap';
 import type { DataSet } from '../types';
-import { aggregateByRegion, findRegionField, findMetricField, findCityField, type RegionAggMode } from '../lib/regions';
+import { aggregateByRegion, findRegionField, findMetricField, findCityField, rowsMatchingRegion, type RegionAggMode } from '../lib/regions';
 import { parseProvinces, normalizeRegionName, loadCityGeo, type ProvinceFeature } from '../lib/geo';
 import provincesGeo from '../lib/china_provinces.json';
 import { fieldValue } from '../lib/utils';
@@ -47,6 +47,7 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
   const [level, setLevel] = useState<'province' | 'city'>('province');
   const [parentRegion, setParentRegion] = useState<{ name: string; adcode: string } | null>(null);
   const [cityLoading, setCityLoading] = useState(false);
+  const [detailRegion, setDetailRegion] = useState<{ name: string; adcode: string; level: 'province' | 'city' } | null>(null);
 
   // 字段
   const regionField = useMemo(() => {
@@ -73,11 +74,27 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
     return map;
   }, [dataSet, activeRegionField, metricField, mode]);
 
+  // 弹窗聚合值：detailRegion 在 regionMap 中的值
+  const regionMapEntry = useMemo(() => {
+    if (!detailRegion) return undefined;
+    const n = normalizeRegionName(detailRegion.name);
+    return Object.entries(regionMap).find(([k]) => normalizeRegionName(k) === n)?.[1];
+  }, [detailRegion, regionMap]);
+
   // 省份值样本（诊断用：看省份字段值格式，判断为何聚合不出）
   const provSample = useMemo(() => {
     if (!activeRegionField) return '';
     return dataSet.rowIds.slice(0, 4).map((id) => String(fieldValue(dataSet.rows[id], activeRegionField) ?? '')).join(' | ');
   }, [dataSet, activeRegionField]);
+
+  // 记录名称字段：优先"名称"，否则第一个 text 字段
+  const nameField = useMemo(() => dataSet.fields.find((f) => f.name === '名称' || /名|title|name/i.test(f.name)) || dataSet.fields.find((f) => f.type === 'text'), [dataSet]);
+
+  // 某行政区域的所有记录行（明细弹窗用）：复用 rowsMatchingRegion 纯函数
+  const rowsOfRegion = useMemo(() => {
+    if (!detailRegion) return [];
+    return rowsMatchingRegion(dataSet, activeRegionField, nameField, metricField, detailRegion.name);
+  }, [detailRegion, activeRegionField, dataSet, nameField, metricField]);
 
   // 内置省界 GeoJSON（import 打包进 bundle，飞书 iframe 也必然可达，非 fetch）
   useEffect(() => {
@@ -167,7 +184,10 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
           try { poly.setOptions({ fillOpacity: 0.95 }); } catch { /* ignore */ }
         });
         poly.on('mouseout', () => { hideTooltip(); try { poly.setOptions({ fillOpacity: 0.8 }); } catch { /* ignore */ } });
-        poly.on('click', () => { if (level === 'province') drillDown(prov); });
+        poly.on('click', () => {
+          // 点击区域 → 打开该区域记录明细弹窗（下钻按钮在弹窗内）
+          setDetailRegion({ name: prov.name, adcode: prov.adcode, level });
+        });
         polygonsRef.current.push(poly);
       }
     }
@@ -238,6 +258,34 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
         {colorScale.map((c) => <span key={c} className="region-legend-color" style={{ background: c }} />)}
         <div className="region-legend-label">低 → 高</div>
       </div>
+
+      {/* 区域明细弹窗：点省市看该区域记录 */}
+      {detailRegion && (
+        <div className="region-detail-mask" onClick={() => setDetailRegion(null)}>
+          <div className="region-detail-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="region-detail-head">
+              <span className="region-detail-title">{detailRegion.name} · {activeRegionField?.name || '区域'}明细</span>
+              <span className="region-detail-agg">聚合: {fmtNum(regionMapEntry?.value ?? 0)} · {rowsOfRegion.length} 条</span>
+              <button className="region-back" onClick={() => setDetailRegion(null)}>✕</button>
+            </div>
+            <div className="region-detail-list">
+              {rowsOfRegion.length ? rowsOfRegion.map((r) => (
+                <div key={r.rowId} className="region-detail-row">
+                  <span className="region-detail-name">{r.name}</span>
+                  <span className="region-detail-val">{r.value == null ? '—' : fmtNum(r.value)}</span>
+                </div>
+              )) : <div className="region-detail-empty">该区域暂无匹配记录</div>}
+            </div>
+            {detailRegion.level === 'province' && detailRegion.adcode && (
+              <button className="region-back region-detail-drill" onClick={() => {
+                const prov = provinces.find((p) => normalizeRegionName(p.name) === normalizeRegionName(detailRegion.name));
+                setDetailRegion(null);
+                if (prov) drillDown(prov);
+              }}>⬇ 下钻到市级</button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

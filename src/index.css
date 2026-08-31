@@ -566,3 +566,29 @@ input:focus, select:focus { outline: 2px solid var(--primary-light); border-colo
 .region-map-topbar .region-back { white-space: nowrap; }
 .region-map-topbar select { border: 1px solid var(--border); background: #fff; border-radius: 6px; }
 .region-diag { top: 52px; }
+
+/* ---------- 区域明细弹窗 ---------- */
+.region-detail-mask {
+  position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.35);
+}
+.region-detail-modal {
+  width: min(360px, 92%); max-height: 70%; display: flex; flex-direction: column;
+  background: #fff; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); overflow: hidden;
+}
+.region-detail-head {
+  display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border);
+}
+.region-detail-title { font-size: 14px; font-weight: 600; flex: 1; }
+.region-detail-agg { font-size: 11px; color: var(--muted); }
+.region-detail-head .region-back { padding: 3px 8px; font-size: 12px; }
+.region-detail-list { overflow-y: auto; flex: 1; padding: 6px 0; }
+.region-detail-row {
+  display: flex; justify-content: space-between; gap: 12px; padding: 8px 14px; font-size: 12px;
+  border-bottom: 1px solid rgba(0,0,0,0.04);
+}
+.region-detail-row:hover { background: #f5f6f8; }
+.region-detail-name { color: var(--text); }
+.region-detail-val { color: var(--muted); font-variant-numeric: tabular-nums; }
+.region-detail-empty { text-align: center; padding: 24px 12px; color: var(--muted); font-size: 12px; }
+.region-detail-drill { margin: 10px 14px; width: calc(100% - 28px); }

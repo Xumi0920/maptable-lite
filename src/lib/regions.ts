@@ -4,6 +4,7 @@
 
 import type { DataSet, FieldDef } from '../types';
 import { displayValue, fieldValue } from './utils';
+import { normalizeRegionName } from './geo';
 
 export type RegionAggMode = 'count' | 'sum' | 'avg' | 'max' | 'min';
 
@@ -107,4 +108,29 @@ export function findCityField(dataSet: DataSet): FieldDef | undefined {
 /** 自动识别指标字段（优先 number 类型） */
 export function findMetricField(dataSet: DataSet): FieldDef | undefined {
   return dataSet.fields.find((f) => f.type === 'number');
+}
+
+/** 某行政区域的所有记录行（明细弹窗用）：按 regionField 值模糊匹配区域名，返回记录名 + 指标值 */
+export interface RegionRowDetail {
+  rowId: string;
+  name: string;
+  value: number | null;
+}
+export function rowsMatchingRegion(
+  dataSet: DataSet,
+  regionField: FieldDef | undefined,
+  nameField: FieldDef | undefined,
+  metricField: FieldDef | undefined,
+  regionName: string,
+): RegionRowDetail[] {
+  if (!regionField || !regionName) return [];
+  const regionNorm = normalizeRegionName(regionName);
+  return dataSet.rowIds.map((id) => {
+    const row = dataSet.rows[id];
+    const regionVal = String(fieldValue(row, regionField) ?? '');
+    if (normalizeRegionName(regionVal) !== regionNorm) return null;
+    const nameText = nameField ? String(fieldValue(row, nameField) ?? '') : id;
+    const m = metricField ? Number(fieldValue(row, metricField)) : NaN;
+    return { rowId: id, name: nameText, value: isFinite(m) ? m : null } as RegionRowDetail | null;
+  }).filter(Boolean) as RegionRowDetail[];
 }
