@@ -33,29 +33,21 @@ function coordsToPaths(geometry?: { type: string; coordinates: unknown }): [numb
   const t = geometry.type;
   const c = geometry.coordinates;
   const out: [number, number][][] = [];
-  // 过滤相邻点跳变 >1.5° 的异常段（跨海/跨省基线 → 会渲染成长线伪影，跳过）
-  const clean = (ring: unknown): [number, number][] | null => {
+  const flatten = (ring: unknown): [number, number][] | null => {
     const arr = ring as any[];
     if (!Array.isArray(arr) || arr.length < 3) return null;
     const pts = arr.map((p) => [Number(p[0]), Number(p[1])] as [number, number]).filter(([x, y]) => isFinite(x) && isFinite(y));
-    if (pts.length < 3) return null;
-    let maxStep = 0;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const ds = Math.abs(pts[i][0] - pts[i + 1][0]) + Math.abs(pts[i][1] - pts[i + 1][1]);
-      if (ds > maxStep) maxStep = ds;
-    }
-    // 闭合 polygon 首尾跳变允许较大（正常），只看中间相邻点：>1.5° 视为异常
-    return maxStep > 1.5 ? null : pts;
+    return pts.length >= 3 ? pts : null;
   };
   if (t === 'Polygon') {
     const rings = c as any[];
-    if (Array.isArray(rings) && rings.length) { const p = clean(rings[0]); if (p) out.push(p); }
+    if (Array.isArray(rings) && rings.length) { const p = flatten(rings[0]); if (p) out.push(p); }
   } else if (t === 'MultiPolygon') {
     const polys = c as any[];
     if (Array.isArray(polys)) {
       for (const poly of polys) {
         const rings = poly as any[];
-        if (Array.isArray(rings) && rings.length) { const p = clean(rings[0]); if (p) out.push(p); }
+        if (Array.isArray(rings) && rings.length) { const p = flatten(rings[0]); if (p) out.push(p); }
       }
     }
   }
@@ -65,7 +57,8 @@ function coordsToPaths(geometry?: { type: string; coordinates: unknown }): [numb
 /** 去掉省名后缀("省/市/自治区/特别行政区/壮族/回族/维吾尔")，用于模糊匹配 */
 export function normalizeRegionName(name: string): string {
   let s = String(name || '').trim();
-  s = s.replace(/(省|市|区|县|特别行政区|自治区|地区|盟|自治州)$/g, '');
+  // 一次剥离末尾最长行政区后缀（不能加 g——g+$ 组合会把"北京市"误删成"北"）
+  s = s.replace(/(特别行政区|自治区|自治州|地区|盟|自治县|省|市|县|区)$/, '');
   s = s.replace(/维吾尔|壮族|回族|蒙古|藏|苗|彝|侗|土家|朝鲜|布依|哈尼|傣|白|黎|佤|满|瑶|景颇|裕固|畲|羌|傈僳|达斡尔|鄂温克|鄂伦春|毛南|仫佬|水|仡佬|拉祜|纳西|东乡|柯尔克孜|保安|撒拉|土|京|塔吉克|乌孜别克|俄罗斯|鄂温克|赫哲|珞巴|门巴/g, '');
   return s;
 }
