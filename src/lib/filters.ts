@@ -1,5 +1,6 @@
-// 通用字段过滤管道（对齐 Maptable「筛选>添加条件」语义，lite 版）
+// 通用字段过滤管道（对齐 Maptable「筛选>添加条件」+「全局筛选器条件组」语义，lite 版）
 // P1 纯函数：操作符按字段类型给；applyFilters 用 AND 组合多条件，输出过滤后的 DataSet。
+// P3 树形扩展：FilterNode = 条件 | 条件组（组内 and/or 可配、组间 AND，递归任意深度）。
 // 区域地图聚合、明细弹窗、表格视图都可吃同一份过滤结果（filter 驱动一切）。
 
 import type { DataSet, FieldDef, FieldType, Row } from '../types';
@@ -18,6 +19,21 @@ export interface FilterCondition {
   op: FilterOp;
   value?: string;    // 统一用字符串承载（number/date 由判定函数转换）
   value2?: string;   // between 上界
+}
+
+/** 条件组：children 按 logic 聚合（and/or）。支持嵌套（递归） */
+export interface FilterGroup {
+  id: string;
+  logic: 'and' | 'or';
+  children: FilterNode[];
+}
+
+/** 过滤树节点 = 条件 | 条件组 */
+export type FilterNode = FilterCondition | FilterGroup;
+
+/** 类型守卫：是否条件组 */
+export function isFilterGroup(node: FilterNode): node is FilterGroup {
+  return (node as FilterGroup).children !== undefined;
 }
 
 /** 操作符中文标签 */
@@ -119,19 +135,39 @@ export function newCondId(): string {
   return `cond_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+/** 生成条件组唯一 id */
+export function newGroupId(): string {
+  return `grp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
 /**
- * 应用过滤条件组（AND 组合）到数据集，输出新 DataSet（fields/geometry 原样保留，rows 只留命中行）。
- * 空条件组 → 原样返回。
+ * 递归判定一个过滤树节点：条件 → matchCondition；条件组 → children 按 logic 聚合。
+ * 空组视为放行（true），避免删空后整表被清。
  */
-export function applyFilters(dataSet: DataSet, conditions: FilterCondition[]): DataSet {
-  const active = conditions.filter((c) => c.fieldId);
+export function matchNode(row: Row, fieldById: Map<string, FieldDef>, node: FilterNode): boolean {
+  if (!isFilterGroup(node)) {
+    return matchCondition(row, fieldById.get(node.fieldId), node);
+  }
+  if (!node.children.length) return true; // 空组放行
+  if (node.logic === 'or') {
+    return node.children.some((child) => matchNode(row, fieldById, child));
+  }
+  return node.children.every((child) => matchNode(row, fieldById, child));
+}
+
+/**
+ * 应用过滤树（顶层节点间 AND 组合）到数据集，输出新 DataSet（fields/geometry 原样保留，rows 只留命中行）。
+ * 空树 → 原样返回。
+ */
+export function applyFiltersTree(dataSet: DataSet, root: FilterNode[]): DataSet {
+  const active = root.filter((n) => (isFilterGroup(n) ? n.children.length > 0 : Boolean(n.fieldId)));
   if (!active.length) return dataSet;
   const fieldById = new Map(dataSet.fields.map((f) => [f.id, f]));
   const keptRows: typeof dataSet.rows = {};
   const keptIds: string[] = [];
   for (const id of dataSet.rowIds) {
     const row = dataSet.rows[id] || {};
-    if (active.every((c) => matchCondition(row, fieldById.get(c.fieldId), c))) {
+    if (active.every((node) => matchNode(row, fieldById, node))) {
       keptRows[id] = dataSet.rows[id];
       keptIds.push(id);
     }
@@ -139,9 +175,37 @@ export function applyFilters(dataSet: DataSet, conditions: FilterCondition[]): D
   return { ...dataSet, rows: keptRows, rowIds: keptIds };
 }
 
+/**
+ * 应用过滤条件组（AND 组合）到数据集。扁平条件数组的旧入口，等价于 applyFiltersTree 的扁平特例。
+ * 空条件组 → 原样返回。
+ */
+export function applyFilters(dataSet: DataSet, conditions: FilterCondition[]): DataSet {
+  return applyFiltersTree(dataSet, conditions);
+}
+
 /** 条件描述文本（诊断/汇总用） */
 export function describeCondition(field: FieldDef | undefined, cond: FilterCondition): string {
   const fname = field?.name || cond.fieldId;
   if (!opNeedsValue(cond.op)) return `${fname} ${OP_LABEL[cond.op]}`;
   return `${fname} ${OP_LABEL[cond.op]} ${cond.value ?? ''}${cond.op === 'between' ? ` ~ ${cond.value2 ?? ''}` : ''}`;
+}
+
+/** 过滤树描述文本（诊断/汇总用）：组用括号 + logic 连接 */
+export function describeNode(fieldById: Map<string, FieldDef>, node: FilterNode): string {
+  if (!isFilterGroup(node)) return describeCondition(fieldById.get(node.fieldId), node);
+  const inner = node.children.map((c) => describeNode(fieldById, c)).join(node.logic === 'or' ? ' 或 ' : ' 且 ');
+  return node.children.length <= 1 ? inner : `(${inner})`;
+}
+
+/** 收集过滤树中所有叶子条件（拉平，供统计/持久化用） */
+export function flattenNodes(root: FilterNode[]): FilterCondition[] {
+  const out: FilterCondition[] = [];
+  const walk = (nodes: FilterNode[]) => {
+    for (const n of nodes) {
+      if (isFilterGroup(n)) walk(n.children);
+      else out.push(n);
+    }
+  };
+  walk(root);
+  return out;
 }
