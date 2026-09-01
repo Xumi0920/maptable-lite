@@ -21,6 +21,7 @@ export interface FilterCondition {
   value2?: string;   // between 上界
   legacyDateTime?: boolean; // v1 日期筛选兼容：按 Date.parse 时间戳而非日期字符串比较
   legacyBlank?: boolean; // v1 空查询兼容：保留 NaN/精确空串比较，而非新版“未填完放行”
+  legacyNumeric?: boolean; // v1 数值单元格兼容：纯空格仍按 Number() 转为 0
 }
 
 /** 条件组：children 按 logic 聚合（and/or）。支持嵌套（递归） */
@@ -123,9 +124,30 @@ export function matchCondition(row: Row, field: FieldDef | undefined, cond: Filt
   if (op === 'empty') return raw == null || String(raw).trim() === '';
   if (op === 'notEmpty') return !(raw == null || String(raw).trim() === '');
 
-  if (raw == null) return false; // 有值比较但该行为空 → 不命中
+  // v1 数值条件完整兼容：查询值、单元格及 between 上界均沿用 numValue(number) 语义
+  if (field.type === 'number' && cond.legacyNumeric) {
+    const legacyNum = (value: unknown): number => value == null || value === '' ? NaN : Number(value);
+    const n = legacyNum(raw);
+    const a = legacyNum(cond.value);
+    switch (op) {
+      case 'eq': return n === a;
+      case 'neq': return n !== a;
+      case 'gt': return n > a;
+      case 'lt': return n < a;
+      case 'gte': return n >= a;
+      case 'lte': return n <= a;
+      case 'between': return n >= a && n <= legacyNum(cond.value2);
+      default: return true;
+    }
+  }
+
+  if (raw == null) {
+    if (cond.legacyDateTime) return op === 'notEquals';
+    return false; // 新版：有值比较但该行为空 → 不命中
+  }
 
   if (field.type === 'number') {
+    if (raw === '' || (typeof raw === 'string' && raw.trim() === '')) return false;
     const n = Number(raw);
     if (!isFinite(n)) return false;
     if (cond.value == null || String(cond.value).trim() === '') return true;
@@ -139,6 +161,7 @@ export function matchCondition(row: Row, field: FieldDef | undefined, cond: Filt
       case 'gte': return n >= a;
       case 'lte': return n <= a;
       case 'between': {
+        if (cond.value2 == null || String(cond.value2).trim() === '') return n >= a;
         const b = Number(cond.value2);
         if (!isFinite(b)) return n >= a;
         return n >= Math.min(a, b) && n <= Math.max(a, b);
@@ -327,9 +350,34 @@ export function legacyFiltersToTree(filters: FilterDef[] | undefined, fields: Fi
       value2: legacy.valueMax == null ? '' : String(legacy.valueMax),
       legacyDateTime: field.type === 'date' ? true : undefined,
       legacyBlank: legacy.value == null || String(legacy.value) === '' ? true : undefined,
+      legacyNumeric: field.type === 'number' ? true : undefined,
     });
   }
   return result;
+}
+
+/**
+ * 升级 e57bdf3 已持久化的筛选树：按旧 TableConfig.filters 的条件签名，
+ * 递归补齐后来增加的 legacy* 兼容标记。未匹配的现代条件保持不变。
+ */
+export function upgradeLegacyFilterTree(root: FilterNode[], legacyFilters: FilterDef[], fields: FieldDef[]): FilterNode[] {
+  const migrated = legacyFiltersToTree(legacyFilters, fields);
+  const signature = (condition: FilterCondition) => [condition.fieldId, condition.op, condition.value ?? '', condition.value2 ?? ''].join('\u0000');
+  const legacyBySignature = new Map(
+    migrated.filter((node): node is FilterCondition => !isFilterGroup(node)).map((condition) => [signature(condition), condition]),
+  );
+  const walk = (nodes: FilterNode[]): FilterNode[] => nodes.map((node) => {
+    if (isFilterGroup(node)) return { ...node, children: walk(node.children) };
+    const legacy = legacyBySignature.get(signature(node));
+    if (!legacy) return node;
+    return {
+      ...node,
+      legacyDateTime: node.legacyDateTime ?? legacy.legacyDateTime,
+      legacyBlank: node.legacyBlank ?? legacy.legacyBlank,
+      legacyNumeric: node.legacyNumeric ?? legacy.legacyNumeric,
+    };
+  });
+  return walk(root);
 }
 
 /** 固定槽位筛选的切换/替换（交叉筛选用）：同一节点再次触发即移除。 */

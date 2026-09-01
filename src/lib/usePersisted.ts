@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { DataSet, FilterDef, TableConfig } from '../types';
-import { legacyFiltersToTree, type FilterNode } from './filters';
+import { legacyFiltersToTree, upgradeLegacyFilterTree, type FilterNode } from './filters';
 import { createSampleDataSet } from './sampleData';
 
 const STORAGE_KEY = 'maptable-lite:dataset';
 const CONFIG_KEY = 'maptable-lite:tableconfig';
 const FILTER_TREE_KEY = 'maptable-lite:filter-tree';
+const FILTER_TREE_MIGRATION_KEY = 'maptable-lite:filter-tree-migration';
+const FILTER_TREE_MIGRATION_VERSION = '2';
 
 export interface PersistedState<T> {
   value: T;
@@ -25,8 +27,11 @@ function loadFromStorage<T>(key: string, fallback: () => T): T {
   return fallback();
 }
 
-function usePersisted<T>(key: string, fallback: () => T): PersistedState<T> {
-  const [value, setValueState] = useState<T>(() => loadFromStorage(key, fallback));
+function usePersisted<T>(key: string, fallback: () => T, upgrade?: (value: T) => T): PersistedState<T> {
+  const [value, setValueState] = useState<T>(() => {
+    const loaded = loadFromStorage(key, fallback);
+    return upgrade ? upgrade(loaded) : loaded;
+  });
   const save = useCallback((v: T | ((prev: T) => T)) => {
     setValueState((prev) => {
       const next = typeof v === 'function' ? (v as (p: T) => T)(prev) : v;
@@ -65,8 +70,25 @@ export function useTableConfig(): PersistedState<TableConfig> {
  * 后续独立持久化，避免旧 TableConfig 结构限制条件组。
  */
 export function useFilterTree(dataSet: DataSet, legacyFilters: FilterDef[]): PersistedState<FilterNode[]> {
-  const state = usePersisted<FilterNode[]>(FILTER_TREE_KEY, () => legacyFiltersToTree(legacyFilters, dataSet.fields));
+  const state = usePersisted<FilterNode[]>(
+    FILTER_TREE_KEY,
+    () => legacyFiltersToTree(legacyFilters, dataSet.fields),
+    (tree) => {
+      try {
+        if (localStorage.getItem(FILTER_TREE_MIGRATION_KEY) === FILTER_TREE_MIGRATION_VERSION) return tree;
+      } catch { /* storage unavailable: keep the in-memory upgrade */ }
+      return upgradeLegacyFilterTree(tree, legacyFilters, dataSet.fields);
+    },
+  );
   const setValue = state.setValue;
   const reset = useCallback(() => setValue([]), [setValue]);
+  // 一次性写回升级结果并记录版本，避免后续重载用陈旧 TableConfig.filters 重放迁移
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(FILTER_TREE_MIGRATION_KEY) === FILTER_TREE_MIGRATION_VERSION) return;
+      localStorage.setItem(FILTER_TREE_KEY, JSON.stringify(state.value));
+      localStorage.setItem(FILTER_TREE_MIGRATION_KEY, FILTER_TREE_MIGRATION_VERSION);
+    } catch { /* ignore */ }
+  }, [state.value]);
   return { ...state, reset };
 }

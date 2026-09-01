@@ -94,11 +94,18 @@ export default function FilterPanel({ dataSet, filterTree, onChange, onClose, co
         next.value2 = '';
         delete next.legacyDateTime;
         delete next.legacyBlank;
+        delete next.legacyNumeric;
       } else if (patch.op && patch.op !== node.op) {
         next.value = '';
         next.value2 = '';
+        delete next.legacyDateTime;
+        delete next.legacyBlank;
+        delete next.legacyNumeric;
       }
-      if (patch.value !== undefined || patch.value2 !== undefined) delete next.legacyBlank;
+      if (patch.value !== undefined || patch.value2 !== undefined) {
+        delete next.legacyBlank;
+        delete next.legacyNumeric;
+      }
       return next;
     });
   }, [dataSet.fields, updateNode]);
