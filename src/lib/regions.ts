@@ -105,6 +105,19 @@ export function findCityField(dataSet: DataSet): FieldDef | undefined {
   return fields.find((f) => f.id !== provId && (f.type === 'text' || f.type === 'select'));
 }
 
+/** 自动识别区县字段（三级下钻用；优先"区县/县/区"类名字，避开省/市字段） */
+export function findDistrictField(dataSet: DataSet): FieldDef | undefined {
+  const fields = dataSet.fields;
+  const district = fields.find((f) =>
+    /区县|区县名|县$|区$|county|district/i.test(f.name) && !/省|城市|市$|city/i.test(f.name)
+  );
+  if (district) return district;
+  // 兜底：非省、非市字段的文本/单选字段
+  const provId = findRegionField(dataSet)?.id;
+  const cityId = findCityField(dataSet)?.id;
+  return fields.find((f) => f.id !== provId && f.id !== cityId && (f.type === 'text' || f.type === 'select'));
+}
+
 /** 自动识别指标字段（优先 number 类型） */
 export function findMetricField(dataSet: DataSet): FieldDef | undefined {
   return dataSet.fields.find((f) => f.type === 'number');
