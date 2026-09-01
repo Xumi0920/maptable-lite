@@ -2,8 +2,8 @@
 // 联动：点击行 → onSelectRows（地图飞行并高亮）；地图选点 → 表格高亮并滚动到该行
 
 import { useMemo, useRef, useState, useCallback, memo } from 'react';
-import type { DataSet, FieldDef, FilterDef, Selection, SortDef } from '../types';
-import { applyFilters, applySorts, displayValue, fieldValue, parseCoordinate } from '../lib/utils';
+import type { DataSet, FieldDef, Selection, SortDef } from '../types';
+import { applySorts, displayValue, fieldValue, parseCoordinate } from '../lib/utils';
 
 interface TablePanelProps {
   dataSet: DataSet;
@@ -12,9 +12,7 @@ interface TablePanelProps {
   onUpdateCell: (rowId: string, fieldId: string, value: unknown) => void;
   onAddRow: () => void;
   onDeleteRows: (rowIds: string[]) => void;
-  filters: FilterDef[];
   sorts: SortDef[];
-  onFiltersChange: (f: FilterDef[]) => void;
   onSortsChange: (s: SortDef[]) => void;
   visibleFieldIds: string[];
   rowRefs: React.MutableRefObject<Map<string, HTMLElement>>;
@@ -25,25 +23,21 @@ const PAGE_SIZE = 20;
 function TablePanelInner(props: TablePanelProps) {
   const {
     dataSet, selection, onSelectRows, onUpdateCell, onAddRow, onDeleteRows,
-    filters, sorts, onFiltersChange, onSortsChange, visibleFieldIds, rowRefs,
+    sorts, onSortsChange, visibleFieldIds, rowRefs,
   } = props;
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<{ rowId: string; fieldId: string } | null>(null);
   const [editingValue, setEditingValue] = useState<string>('');
-  const [filterFieldId, setFilterFieldId] = useState<string>('');
-  const [filterOperator, setFilterOperator] = useState<string>('eq');
-  const [filterValue, setFilterValue] = useState<string>('');
+
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const fields = dataSet.fields;
   const fieldMap = useMemo(() => new Map(fields.map((f) => [f.id, f])), [fields]);
 
-  // 应用筛选 + 排序
+  // 共享筛选已在 App 层应用；表格只负责排序
   const processed = useMemo(() => {
-    let ids = applyFilters(dataSet.rowIds, dataSet.rows, fields, filters);
-    ids = applySorts(ids, dataSet.rows, fields, sorts);
-    return ids;
-  }, [dataSet, fields, filters, sorts]);
+    return applySorts(dataSet.rowIds, dataSet.rows, fields, sorts);
+  }, [dataSet, fields, sorts]);
 
   const totalPages = Math.max(1, Math.ceil(processed.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -78,16 +72,6 @@ function TablePanelInner(props: TablePanelProps) {
     setEditing(null);
   }, [editing, fieldMap, onUpdateCell]);
 
-  const addFilter = useCallback(() => {
-    if (!filterFieldId) return;
-    const f: FilterDef = { fieldId: filterFieldId, operator: filterOperator as FilterDef['operator'], value: filterValue };
-    onFiltersChange([...filters, f]);
-    setFilterValue('');
-  }, [filterFieldId, filterOperator, filterValue, filters, onFiltersChange]);
-
-  const removeFilter = useCallback((idx: number) => {
-    onFiltersChange(filters.filter((_, i) => i !== idx));
-  }, [filters, onFiltersChange]);
 
   // 点击行：选中/切换
   const clickRow = useCallback((rowId: string) => {
@@ -107,40 +91,8 @@ function TablePanelInner(props: TablePanelProps) {
       <div className="table-toolbar">
         <span className="tool-title">数据表 <small>{processed.length} 条 · 第 {safePage}/{totalPages} 页</small></span>
         <div className="spacer" />
-        {/* 筛选输入 */}
-        <select value={filterFieldId} onChange={(e) => setFilterFieldId(e.target.value)}>
-          <option value="">筛选字段</option>
-          {fields.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-        </select>
-        <select value={filterOperator} onChange={(e) => setFilterOperator(e.target.value)}>
-          <option value="eq">等于</option>
-          <option value="neq">不等于</option>
-          <option value="contains">包含</option>
-          <option value="gt">大于</option>
-          <option value="lt">小于</option>
-        </select>
-        <input
-          placeholder="值" value={filterValue} onChange={(e) => setFilterValue(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && addFilter()}
-          style={{ width: 90 }}
-        />
-        <button onClick={addFilter} disabled={!filterFieldId}>筛选</button>
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>筛选条件由顶部“筛选”统一管理</span>
       </div>
-
-      {/* 已应用的筛选条件 */}
-      {filters.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, padding: '0 12px 6px', flexWrap: 'wrap' }}>
-          {filters.map((f, i) => {
-            const fld = fieldMap.get(f.fieldId);
-            return (
-              <span key={i} className="field-chip">
-                {fld?.name} {f.operator} {String(f.value)}
-                <button onClick={() => removeFilter(i)}>×</button>
-              </span>
-            );
-          })}
-        </div>
-      )}
 
       {/* 表格 */}
       <div className="data-grid" ref={scrollRef}>

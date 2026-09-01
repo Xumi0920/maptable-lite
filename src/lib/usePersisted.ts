@@ -1,11 +1,13 @@
 // localStorage 持久化 hook，管理数据集 + 视图配置
 
 import { useCallback, useEffect, useState } from 'react';
-import type { DataSet, TableConfig } from '../types';
+import type { DataSet, FilterDef, TableConfig } from '../types';
+import { legacyFiltersToTree, type FilterNode } from './filters';
 import { createSampleDataSet } from './sampleData';
 
 const STORAGE_KEY = 'maptable-lite:dataset';
 const CONFIG_KEY = 'maptable-lite:tableconfig';
+const FILTER_TREE_KEY = 'maptable-lite:filter-tree';
 
 export interface PersistedState<T> {
   value: T;
@@ -56,4 +58,15 @@ const DEFAULT_CONFIG: TableConfig = { filters: [], sorts: [], visibleFieldIds: [
 
 export function useTableConfig(): PersistedState<TableConfig> {
   return usePersisted<TableConfig>(CONFIG_KEY, () => DEFAULT_CONFIG);
+}
+
+/**
+ * 跨视图共享的筛选树。首次升级且新 key 不存在时，从 v1 表格 filters 迁移；
+ * 后续独立持久化，避免旧 TableConfig 结构限制条件组。
+ */
+export function useFilterTree(dataSet: DataSet, legacyFilters: FilterDef[]): PersistedState<FilterNode[]> {
+  const state = usePersisted<FilterNode[]>(FILTER_TREE_KEY, () => legacyFiltersToTree(legacyFilters, dataSet.fields));
+  const setValue = state.setValue;
+  const reset = useCallback(() => setValue([]), [setValue]);
+  return { ...state, reset };
 }

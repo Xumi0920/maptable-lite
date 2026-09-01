@@ -1,7 +1,7 @@
 // 区域地图组件：按行政区聚合着色（choropleth）—— 用内置省界 GeoJSON 实现
 // 不依赖高德 DistrictSearch（该插件在 iframe/安全码环境易不回调），静态打包省界，稳定可靠
 // 支持：三级下钻（省→市→区县，pathStack 栈驱动）+ 按行政区字段聚合着色（模糊匹配 福建↔福建省）
-//      + 悬停 tooltip + 地域筛选 + 区域范围选择 + 明细弹窗 + 通用字段筛选（Maptable「筛选>添加条件」语义）
+//      + 悬停 tooltip + 地域切片器 + 区域范围选择 + 明细弹窗；通用字段筛选由上层统一应用
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useAMap } from '../lib/useAMap';
@@ -10,7 +10,7 @@ import { aggregateByRegion, findRegionField, findMetricField, findCityField, fin
 import { parseProvinces, normalizeRegionName, loadCityGeo, type ProvinceFeature } from '../lib/geo';
 import provincesGeo from '../lib/china_provinces.json';
 import { fieldValue } from '../lib/utils';
-import { applyFiltersTree, opsForField, opNeedsValue, OP_LABEL, describeNode, newCondId, newGroupId, isFilterGroup, flattenNodes, type FilterCondition, type FilterGroup, type FilterNode, type FilterOp } from '../lib/filters';
+
 
 export interface RegionMapPanelProps {
   dataSet: DataSet;
@@ -55,9 +55,7 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
   const [detailRegion, setDetailRegion] = useState<{ name: string; adcode: string; depth: number } | null>(null);
   // 地域筛选（切片器特例）：选中某地域（归一化值）后，仅保留该地域的记录用于地图聚合
   const [filterRegion, setFilterRegion] = useState<string | null>(null);
-  // 通用字段筛选（Maptable 全局筛选器语义）：过滤树 = 条件|条件组（组内 and/or，组间 AND，支持嵌套）
-  const [filterTree, setFilterTree] = useState<FilterNode[]>([]);
-  const [showFilterPanel, setShowFilterPanel] = useState(false);
+
 
   // 固定省级列表（范围下拉用，不随下钻变化）
   const provinceList = useMemo(() => parseProvinces(provincesGeo), []);
@@ -97,8 +95,8 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'zh'));
   }, [dataSet, activeRegionField]);
 
-  // 通用字段筛选管道：过滤树递归判定（组内 and/or，组间 AND）→ 中间数据集
-  const condFiltered = useMemo<DataSet>(() => applyFiltersTree(dataSet, filterTree), [dataSet, filterTree]);
+  // dataSet 已由 App 层应用共享字段筛选；这里只叠加区域地图专用地域切片器
+  const condFiltered = dataSet;
 
   // 地域筛选后的数据（在通用筛选之上叠加）：filterRegion 为空则全量；否则保留 activeRegionField 归一化值等于 filterRegion（同样归一化）的记录
   const filteredDataSet = useMemo<DataSet>(() => {
@@ -246,69 +244,6 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
     await drillTo({ name: prov.name, adcode: prov.adcode }, 0);
   }, [provinceList, drillTo, goToDepth]);
 
-  // ---- 筛选面板操作（树形：条件 | 条件组，支持嵌套） ----
-  // 通用递归更新：按 id 找到节点，用 mapper 生成新节点（找不到原样返回）
-  const mapTree = useCallback((nodes: FilterNode[], mapper: (n: FilterNode) => FilterNode): FilterNode[] => {
-    return nodes.map((n) => {
-      if (n.id === mapperId(n)) return mapper(n);
-      if (isFilterGroup(n)) return { ...n, children: mapTree(n.children, mapper) };
-      return n;
-    });
-    function mapperId(x: FilterNode) { return (x as FilterCondition).id; }
-  }, []);
-  const updateNodeById = useCallback((id: string, mapper: (n: FilterNode) => FilterNode) => {
-    setFilterTree((tree) => mapTree(tree, (n) => (n.id === id ? mapper(n) : n)));
-  }, [mapTree]);
-  const addCondition = useCallback((parentId?: string) => {
-    const f = dataSet.fields[0];
-    if (!f) return;
-    const ops = opsForField(f.type);
-    const cond: FilterCondition = { id: newCondId(), fieldId: f.id, op: ops[0], value: '', value2: '' };
-    if (!parentId) { setFilterTree((tree) => [...tree, cond]); return; }
-    // 加进指定组（顶层组或嵌套组）
-    setFilterTree((tree) => mapTree(tree, (n) => (
-      n.id === parentId && isFilterGroup(n) ? { ...n, children: [...n.children, cond] } : n
-    )));
-  }, [dataSet, mapTree]);
-  const addGroup = useCallback((parentId?: string) => {
-    const grp: FilterGroup = { id: newGroupId(), logic: 'or', children: [] };
-    if (!parentId) { setFilterTree((tree) => [...tree, grp]); return; }
-    setFilterTree((tree) => mapTree(tree, (n) => (
-      n.id === parentId && isFilterGroup(n) ? { ...n, children: [...n.children, grp] } : n
-    )));
-  }, [mapTree]);
-  const toggleGroupLogic = useCallback((id: string) => {
-    setFilterTree((tree) => mapTree(tree, (n) => (
-      n.id === id && isFilterGroup(n) ? { ...n, logic: n.logic === 'and' ? 'or' : 'and' } : n
-    )));
-  }, [mapTree]);
-  const removeNodeById = useCallback((id: string) => {
-    setFilterTree((tree) => {
-      const walk = (nodes: FilterNode[]): FilterNode[] => nodes
-        .filter((n) => n.id !== id)
-        .map((n) => (isFilterGroup(n) ? { ...n, children: walk(n.children) } : n));
-      return walk(tree);
-    });
-  }, []);
-  const updateCondition = useCallback((id: string, patch: Partial<FilterCondition>) => {
-    updateNodeById(id, (n) => {
-      if (isFilterGroup(n) || n.id !== id) return n;
-      const c = n as FilterCondition;
-      const next = { ...c, ...patch };
-      // 换字段时操作符重置为该类型第一个；换操作符时清值
-      if (patch.fieldId && patch.fieldId !== c.fieldId) {
-        const nf = dataSet.fields.find((f) => f.id === patch.fieldId);
-        const ops = opsForField(nf?.type || 'text');
-        next.op = ops[0] as FilterOp;
-        next.value = '';
-        next.value2 = '';
-      } else if (patch.op && patch.op !== c.op) {
-        next.value = '';
-        next.value2 = '';
-      }
-      return next;
-    });
-  }, [dataSet, updateNodeById]);
 
   // 渲染行政区 polygon（省/市/区县通用：provinces 数组内容随下钻替换）
   useEffect(() => {
@@ -368,91 +303,6 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
   if (!amapReady) return <div className="empty-state"><div className="icon">🗺️</div><div>正在加载地图…</div></div>;
   if (!regionField) return <div className="empty-state"><div className="icon">🗺️</div><div>未识别到行政区字段（需表里有「省份/城市/地区」字段）</div></div>;
 
-  const fieldById = new Map(dataSet.fields.map((f) => [f.id, f]));
-
-  // 筛选面板递归渲染：条件行 | 条件组（组头 logic 切换 + 组内加条件/嵌套组 + 删除；嵌套限 2 层）
-  const renderFilterNode = (node: FilterNode, level: number): React.JSX.Element => {
-    if (isFilterGroup(node)) {
-      return (
-        <div key={node.id} style={{ border: '1px dashed var(--border, #d0d3d8)', borderRadius: 6, padding: '6px 6px 2px', marginBottom: 6, background: level === 0 ? 'rgba(47,116,224,.03)' : 'transparent' }}>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
-            <button
-              className="region-back"
-              style={{ padding: '1px 8px', fontSize: 11, fontWeight: 600, color: node.logic === 'or' ? '#d93b33' : '#2f74e0', borderColor: node.logic === 'or' ? '#d93b33' : '#2f74e0' }}
-              onClick={() => toggleGroupLogic(node.id)}
-              title="点击切换 且/或"
-            >
-              {node.logic === 'or' ? '或' : '且'}
-            </button>
-            <span style={{ fontSize: 10, color: 'var(--muted, #888)', marginLeft: 4 }}>条件组（{node.children.length}）</span>
-            <div style={{ flex: 1 }} />
-            {level < 1 && (
-              <>
-                <button className="region-back" style={{ padding: '1px 6px', fontSize: 10 }} onClick={() => addCondition(node.id)} title="组内加条件">+条件</button>
-                <button className="region-back" style={{ padding: '1px 6px', fontSize: 10, marginLeft: 2 }} onClick={() => addGroup(node.id)} title="组内加嵌套组">+组</button>
-              </>
-            )}
-            <button className="region-back" style={{ padding: '1px 6px', fontSize: 10, marginLeft: 4 }} onClick={() => removeNodeById(node.id)} title="删除条件组">✕</button>
-          </div>
-          {node.children.length === 0 && (
-            <div style={{ fontSize: 10, color: 'var(--muted, #888)', padding: '2px 0 6px' }}>空组=放行全部。点右上「+条件」加入。</div>
-          )}
-          {node.children.map((child) => renderFilterNode(child, level + 1))}
-        </div>
-      );
-    }
-    const cond = node as FilterCondition;
-    const field = fieldById.get(cond.fieldId);
-    const ops = opsForField(field?.type || 'text');
-    const needsValue = opNeedsValue(cond.op);
-    const isBetween = cond.op === 'between';
-    const isSelect = field?.type === 'select';
-    return (
-      <div key={cond.id} style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 6, paddingLeft: level > 0 ? 0 : 0 }}>
-        <select
-          value={cond.fieldId}
-          onChange={(e) => updateCondition(cond.id, { fieldId: e.target.value })}
-          style={{ ...filterInputStyle, flex: '1.2' }}
-        >
-          {dataSet.fields.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-        </select>
-        <select
-          value={cond.op}
-          onChange={(e) => updateCondition(cond.id, { op: e.target.value as FilterOp })}
-          style={{ ...filterInputStyle, flex: '0.9' }}
-        >
-          {ops.map((op) => <option key={op} value={op}>{OP_LABEL[op]}</option>)}
-        </select>
-        {needsValue && (
-          isSelect && field?.options?.length ? (
-            <select value={cond.value || ''} onChange={(e) => updateCondition(cond.id, { value: e.target.value })} style={filterInputStyle}>
-              <option value="">（请选择）</option>
-              {field.options.map((o) => <option key={o} value={o}>{o}</option>)}
-            </select>
-          ) : (
-            <input
-              type={field?.type === 'date' ? 'date' : field?.type === 'number' ? 'number' : 'text'}
-              value={cond.value || ''}
-              onChange={(e) => updateCondition(cond.id, { value: e.target.value })}
-              placeholder="值"
-              style={filterInputStyle}
-            />
-          )
-        )}
-        {isBetween && (
-          <input
-            type="number"
-            value={cond.value2 || ''}
-            onChange={(e) => updateCondition(cond.id, { value2: e.target.value })}
-            placeholder="上界"
-            style={filterInputStyle}
-          />
-        )}
-        <button className="region-back" style={{ padding: '2px 6px', fontSize: 11 }} onClick={() => removeNodeById(cond.id)} title="删除条件">✕</button>
-      </div>
-    );
-  };
-
   return (
     <div className="region-map-view">
       <div className="region-map-topbar">
@@ -477,15 +327,7 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
         {depth > 0 && (
           <button className="region-back" onClick={() => goToDepth(depth - 1)}>← 返回上一级</button>
         )}
-        {/* 通用筛选按钮：带条件数徽标 */}
-        <button
-          className="region-back"
-          style={{ padding: '3px 10px', fontSize: 11, ...(filterTree.length ? { borderColor: '#2f74e0', color: '#2f74e0' } : {}) }}
-          onClick={() => setShowFilterPanel((s) => !s)}
-          title="通用字段筛选（AND 组合）"
-        >
-          筛选{filterTree.length ? `(${flattenNodes(filterTree).length})` : ''}
-        </button>
+
         <button className="region-back" style={{ padding: '3px 10px', fontSize: 11 }} onClick={() => setShowDiag((s) => !s)}>
           {showDiag ? '隐藏诊断' : '诊断'}
         </button>
@@ -506,30 +348,12 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
           <div>高德: {amapLoading ? '⏳加载中' : amapError ? `❌${amapError}` : amapReady ? '✅ready' : '未加载'}</div>
           <div>容器: {containerH}px · 界块: {provinces.length} · 地图块: {polygonsRef.current.length} · 深度: {depth}</div>
           <div>行政区: {activeRegionField?.name || '?'} · 聚合: {Object.keys(regionMap).length} 区 {Object.keys(regionMap).slice(0, 6).join(',')}</div>
-          <div>筛选: {filterRegion || '(全部)'} · 条件: {filterTree.length ? filterTree.map((n) => describeNode(fieldById, n)).join(' 且 ') : '(无)'} · {filteredCount}/{dataSet.rowIds.length} 条</div>
+          <div>共享筛选后: {dataSet.rowIds.length} 条 · 地域切片: {filterRegion || '(全部)'} · 当前 {filteredCount} 条</div>
           <div>值样本: {provSample || '(空)'}</div>
           <div>{status}</div>
         </div>
       )}
-      {/* 通用筛选面板：过滤树（条件 | 条件组，组内 and/or 可切，嵌套限 2 层），顶层 AND */}
-      {showFilterPanel && (
-        <div className="region-filter-panel" style={{ position: 'absolute', top: 40, right: 8, zIndex: 30, background: '#fff', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,.12)', padding: 10, width: 340, maxHeight: '70%', overflowY: 'auto' }}>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 600 }}>筛选条件（组间全部满足）</span>
-            <div style={{ flex: 1 }} />
-            <button className="region-back" style={{ padding: '2px 8px', fontSize: 11 }} onClick={() => addCondition()}>+ 条件</button>
-            <button className="region-back" style={{ padding: '2px 8px', fontSize: 11, marginLeft: 4 }} onClick={() => addGroup()} title="添加条件组（组内 且/或 可切换）">+ 组</button>
-            {filterTree.length > 0 && (
-              <button className="region-back" style={{ padding: '2px 8px', fontSize: 11, marginLeft: 4 }} onClick={() => setFilterTree([])}>清空</button>
-            )}
-            <button className="region-back" style={{ padding: '2px 8px', fontSize: 11, marginLeft: 4 }} onClick={() => setShowFilterPanel(false)}>✕</button>
-          </div>
-          {filterTree.length === 0 && (
-            <div style={{ fontSize: 11, color: 'var(--muted, #888)', padding: '8px 0' }}>暂无条件，地图显示全部数据。点「+ 条件」按任意字段过滤，或「+ 组」建或条件组。</div>
-          )}
-          {filterTree.map((node) => renderFilterNode(node, 0))}
-        </div>
-      )}
+
       <div className="region-legend">
         {colorScale.map((c) => <span key={c} className="region-legend-color" style={{ background: c }} />)}
         <div className="region-legend-label">低 → 高</div>
@@ -568,9 +392,6 @@ export default function RegionMapPanel({ dataSet, regionFieldId, metricFieldId, 
     </div>
   );
 }
-
-/** 筛选面板条件行的共享样式 */
-const filterInputStyle: React.CSSProperties = { flex: 1, minWidth: 0, border: '1px solid var(--border, #e5e7eb)', borderRadius: 4, padding: '3px 6px', fontSize: 11 };
 
 function modeLabel(m: RegionAggMode): string {
   return { count: '计数', sum: '求和', avg: '平均', max: '最大', min: '最小' }[m] || m;

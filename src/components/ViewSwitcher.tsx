@@ -2,25 +2,28 @@
 // 视图类型定义在 types/view.ts（ViewType）；每种视图是独立组件
 
 import { useMemo, useState, lazy, Suspense } from 'react';
-import type { DataSet, FilterDef, Selection, SortDef, ViewType } from '../types';
+import type { DataSet, Selection, SortDef, ViewType } from '../types';
+import { flattenNodes, type FilterNode } from '../lib/filters';
 import type { RegionAggMode } from '../lib/regions';
 import { findRegionField, findMetricField } from '../lib/regions';
 import TablePanel from './TablePanel';
 import KanbanView from './views/KanbanView';
 import CalendarView from './views/CalendarView';
+import FilterPanel from './FilterPanel';
 // 区域地图（含 599KB 省界 GeoJSON）懒加载：主应用首屏不预加载，切区域地图 tab 才加载
 const RegionMapPanel = lazy(() => import('./RegionMapPanel'));
 
 export interface ViewSwitcherProps {
   dataSet: DataSet;
+  sourceRowCount: number;
+  filterTree: FilterNode[];
+  onFilterTreeChange: (tree: FilterNode[]) => void;
   selection: Selection;
   onSelectRows: (rows: string[]) => void;
   onUpdateCell: (rowId: string, fieldId: string, value: unknown) => void;
   onAddRow: () => void;
   onDeleteRows: (rowIds: string[]) => void;
-  filters: FilterDef[];
   sorts: SortDef[];
-  onFiltersChange: (f: FilterDef[]) => void;
   onSortsChange: (s: SortDef[]) => void;
   visibleFieldIds: string[];
   rowRefs: React.MutableRefObject<Map<string, HTMLElement>>;
@@ -34,8 +37,9 @@ const VIEW_TABS: Array<{ key: ViewType; label: string; icon: string }> = [
 ];
 
 export default function ViewSwitcher(props: ViewSwitcherProps) {
-  const { dataSet, selection, onSelectRows, onUpdateCell } = props;
+  const { dataSet, sourceRowCount, filterTree, onFilterTreeChange, selection, onSelectRows, onUpdateCell } = props;
   const [view, setView] = useState<ViewType>('table');
+  const [showFilters, setShowFilters] = useState(false);
 
   // 看板分列字段（select）
   const selectFields = useMemo(() => dataSet.fields.filter((f) => f.type === 'select'), [dataSet.fields]);
@@ -66,7 +70,22 @@ export default function ViewSwitcher(props: ViewSwitcherProps) {
             <span className="view-tab-icon">{t.icon}</span> {t.label}
           </button>
         ))}
+        <div style={{ flex: 1 }} />
+        <span style={{ alignSelf: 'center', fontSize: 11, color: 'var(--muted)' }}>{dataSet.rowIds.length}/{sourceRowCount} 条</span>
+        <button
+          className={`view-tab${filterTree.length ? ' active' : ''}`}
+          onClick={() => setShowFilters((value) => !value)}
+          title="所有视图共用字段筛选"
+        >
+          ⏷ 筛选{filterTree.length ? `(${flattenNodes(filterTree).length})` : ''}
+        </button>
       </div>
+
+      {showFilters && (
+        <div style={{ position: 'absolute', top: 42, right: 8, zIndex: 80 }}>
+          <FilterPanel dataSet={dataSet} filterTree={filterTree} onChange={onFilterTreeChange} onClose={() => setShowFilters(false)} />
+        </div>
+      )}
 
       {/* 视图配置条 */}
       {(view === 'kanban' || view === 'calendar') && (

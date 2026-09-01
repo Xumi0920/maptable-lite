@@ -14,7 +14,9 @@ import { bitable } from '@lark-base-open/js-sdk';
 import { useTheme, useConfig } from './hooks';
 import { dataSetFromBitable, type BitableFieldLike, type BitableRecordLike } from './bitableToDataSet';
 import { findRegionField, findMetricField, type RegionAggMode } from '../lib/regions';
+import { applyFiltersTree, flattenNodes, type FilterNode } from '../lib/filters';
 import type { DataSet } from '../types';
+import FilterPanel from '../components/FilterPanel';
 import RegionMapPanel from '../components/RegionMapPanel';
 import '../index.css';
 
@@ -45,6 +47,8 @@ export default function FeishuPluginApp() {
   const [regionFieldId, setRegionFieldId] = useState('');
   const [regionMetricId, setRegionMetricId] = useState('');
   const [regionMode, setRegionMode] = useState<RegionAggMode>('sum');
+  const [filterTree, setFilterTree] = useState<FilterNode[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
 
   const hasKey = (import.meta.env.VITE_AMAP_KEY as string) || '';
 
@@ -59,6 +63,13 @@ export default function FeishuPluginApp() {
   }, [dataSet, regionMetricId]);
   const regionTextFields = useMemo(() => dataSet ? dataSet.fields.filter((f) => f.type === 'text' || f.type === 'select') : [], [dataSet]);
   const regionNumFields = useMemo(() => dataSet ? dataSet.fields.filter((f) => f.type === 'number') : [], [dataSet]);
+  const filteredDataSet = useMemo(() => dataSet ? applyFiltersTree(dataSet, filterTree) : null, [dataSet, filterTree]);
+
+  // 切换飞书数据表时清空旧表字段条件，避免字段 id 不同导致面板残留无效条件
+  useEffect(() => {
+    setFilterTree([]);
+    setShowFilters(false);
+  }, [config.tableId]);
 
   // 拉取多维表格下所有表（用 getTableList 拿标准数据表实例，确保 id 是标准表 id）
   const loadTableList = useMemo(() => async () => {
@@ -242,23 +253,31 @@ export default function FeishuPluginApp() {
         <select value={regionMode} onChange={(e) => setRegionMode(e.target.value as RegionAggMode)} style={{ ...selStyle }}>
           <option value="count">计数</option><option value="sum">求和</option><option value="avg">平均</option><option value="max">最大</option><option value="min">最小</option>
         </select>
+        <button onClick={() => setShowFilters((value) => !value)} style={{ ...selStyle, cursor: 'pointer', color: filterTree.length ? '#3370ff' : undefined }}>
+          筛选{filterTree.length ? `(${flattenNodes(filterTree).length})` : ''}
+        </button>
       </div>
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div style={{ textAlign: 'center', padding: '6px 0', fontSize: 12, color: '#8a919f' }}>
-          {dataSet ? `${dataSet.name} · ${dataSet.rowIds.length} 条记录` : loading ? '加载数据中…' : '无数据'}
+          {filteredDataSet ? `${filteredDataSet.name} · ${filteredDataSet.rowIds.length}/${dataSet?.rowIds.length || 0} 条记录` : loading ? '加载数据中…' : '无数据'}
         </div>
         <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
           {loading && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8a919f' }}>加载中…</div>}
-          {!loading && dataSet && (
-            <RegionMapPanel dataSet={dataSet} regionFieldId={regionFieldSel} metricFieldId={regionMetricSel} mode={regionMode} />
+          {showFilters && dataSet && (
+            <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 80 }}>
+              <FilterPanel dataSet={dataSet} filterTree={filterTree} onChange={setFilterTree} onClose={() => setShowFilters(false)} compact />
+            </div>
+          )}
+          {!loading && filteredDataSet && (
+            <RegionMapPanel dataSet={filteredDataSet} regionFieldId={regionFieldSel} metricFieldId={regionMetricSel} mode={regionMode} />
           )}
           {!loading && !dataSet && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8a919f' }}>请先在配置模式选择表和坐标字段</div>}
         </div>
       </div>
       {dataSet && (
         <div style={{ padding: '8px 14px', borderTop: '1px solid rgba(0,0,0,0.06)', fontSize: 12 }}>
-          <span style={{ marginRight: 12 }}>记录: {dataSet.rowIds.length}</span>
+          <span style={{ marginRight: 12 }}>记录: {filteredDataSet?.rowIds.length || 0}/{dataSet.rowIds.length}</span>
           <span style={{ marginRight: 12 }}>字段: {dataSet.fields.length}</span>
           <span>行政区字段: {regionTextFields.find((f) => f.id === regionFieldSel)?.name || '（未识别）'}</span>
         </div>

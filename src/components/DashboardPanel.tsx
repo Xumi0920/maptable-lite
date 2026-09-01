@@ -8,15 +8,18 @@ import {
   PieChart, Pie, Cell, Legend, LineChart, Line, CartesianGrid,
 } from 'recharts';
 import type { DataSet, FieldDef } from '../types';
+import type { FilterNode } from '../lib/filters';
 import { computeDashboardStats, topRowsByField, colorFor } from '../lib/aggregate';
 
 interface DashboardPanelProps {
   dataSet: DataSet;
   coordField?: FieldDef;
+  activeCrossFilter?: FilterNode;
+  onCrossFilter: (node: FilterNode | null) => void;
   onClose: () => void;
 }
 
-export default function DashboardPanel({ dataSet, onClose }: DashboardPanelProps) {
+export default function DashboardPanel({ dataSet, activeCrossFilter, onCrossFilter, onClose }: DashboardPanelProps) {
   // 选中的数值字段（柱状图用）
   const numericFields = useMemo(() => dataSet.fields.filter((f) => f.type === 'number'), [dataSet.fields]);
   const [barFieldId, setBarFieldId] = useState<string>(numericFields[0]?.id || '');
@@ -45,11 +48,37 @@ export default function DashboardPanel({ dataSet, onClose }: DashboardPanelProps
   );
 
   const numberFields = numericFields;
+  const crossFilterActive = Boolean(activeCrossFilter);
+
+  const filterByBar = (entry: { label?: string }) => {
+    if (!labelField || !entry?.label) return;
+    onCrossFilter({ id: 'dashboard_cross', fieldId: labelField.id, op: 'equals', value: entry.label });
+  };
+  const filterByPie = (entry: { name?: string }) => {
+    if (!pieGroup || !entry?.name) return;
+    onCrossFilter({ id: 'dashboard_cross', fieldId: pieGroup.fieldId, op: 'equals', value: entry.name });
+  };
+  const filterByYear = (year: string | number | undefined) => {
+    if (!trend || year == null) return;
+    const value = String(year);
+    onCrossFilter({
+      id: 'dashboard_cross',
+      logic: 'and',
+      children: [
+        { id: 'dashboard_cross_from', fieldId: trend.fieldId, op: 'gte', value: `${value}-01-01` },
+        { id: 'dashboard_cross_to', fieldId: trend.fieldId, op: 'lte', value: `${value}-12-31` },
+      ],
+    });
+  };
 
   return (
     <div className="dashboard-panel">
       <div className="dashboard-header">
         <span className="dashboard-title">📊 仪表盘 <small>{dataSet.name}</small></span>
+        <span style={{ fontSize: 11, color: crossFilterActive ? '#2f6bff' : 'var(--muted)' }}>
+          {crossFilterActive ? '● 交叉筛选已启用（再次点击同一项取消）' : '点击图表项进行交叉筛选'}
+        </span>
+        {crossFilterActive && <button onClick={() => onCrossFilter(null)}>清除交叉筛选</button>}
         <button className="dashboard-close" onClick={onClose}>✕</button>
       </div>
 
@@ -98,7 +127,7 @@ export default function DashboardPanel({ dataSet, onClose }: DashboardPanelProps
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={50} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip />
-                <Bar dataKey="value" fill="#2f6bff" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="value" fill="#2f6bff" radius={[4, 4, 0, 0]} cursor="pointer" onClick={(entry: any) => filterByBar(entry?.payload ?? entry)} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -112,7 +141,7 @@ export default function DashboardPanel({ dataSet, onClose }: DashboardPanelProps
             <ResponsiveContainer width="100%" height={260} initialDimension={{ width: 280, height: 260 }}>
               <PieChart>
                 <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90}
-                  isAnimationActive={false} label={false}>
+                  isAnimationActive={false} label={false} cursor="pointer" onClick={(entry: any) => filterByPie(entry?.payload ?? entry)}>
                   {pieData.map((_, i) => <Cell key={i} fill={colorFor(i)} />)}
                 </Pie>
                 <Tooltip />
@@ -128,7 +157,7 @@ export default function DashboardPanel({ dataSet, onClose }: DashboardPanelProps
         <ChartCard title={trend ? `${trend.fieldName} 年度趋势` : '年度趋势'}>
           {trendData.length ? (
             <ResponsiveContainer width="100%" height={260} initialDimension={{ width: 280, height: 260 }}>
-              <LineChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <LineChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }} onClick={(state: any) => filterByYear(state?.activeLabel)}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                 <XAxis dataKey="year" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />

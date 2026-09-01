@@ -4,6 +4,7 @@
 
 import type { DataSet } from '../types';
 import { numValue, fieldValue, displayValue } from './utils';
+import { dateKey } from './filters';
 
 /** 数值字段的统计 */
 export interface NumericStat {
@@ -85,9 +86,9 @@ export function computeDashboardStats(ds: DataSet): DashboardStats {
     for (const id of ds.rowIds) {
       const raw = fieldValue(ds.rows[id] || {}, f);
       if (raw == null || raw === '') continue;
-      const d = new Date(String(raw));
-      if (isNaN(d.getTime())) continue;
-      const y = String(d.getFullYear());
+      const normalized = dateKey(raw);
+      if (!normalized) continue;
+      const y = normalized.slice(0, 4);
       years.set(y, (years.get(y) || 0) + 1);
     }
     const yr = [...years.entries()]

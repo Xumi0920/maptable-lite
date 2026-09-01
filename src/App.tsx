@@ -4,7 +4,8 @@
 
 import { useMemo, useRef, useState, useCallback } from 'react';
 import type { DataSet, LayerType, Selection } from './types';
-import { useDataSet, useTableConfig } from './lib/usePersisted';
+import { useDataSet, useFilterTree, useTableConfig } from './lib/usePersisted';
+import { applyFiltersTree, toggleNamedFilter, type FilterNode } from './lib/filters';
 import { csvToDataSet, geojsonToDataSet, datasetToCsv, datasetToGeojson, downloadText, downloadJson } from './lib/io';
 import { useDataSetActions } from './hooks/useDataSetActions';
 import MapPanel, { type MapPanelHandle } from './components/MapPanel';
@@ -20,6 +21,16 @@ function App() {
   const cfgState = useTableConfig();
   const config = cfgState.value;
   const setConfig = cfgState.setValue;
+  const filterState = useFilterTree(dataSet, config.filters);
+  const filterTree = filterState.value;
+  const setFilterTree = filterState.setValue;
+  const resetFilterTree = filterState.reset;
+  const filteredDataSet = useMemo(() => applyFiltersTree(dataSet, filterTree), [dataSet, filterTree]);
+  // 仪表盘保留交叉筛选的竞争项，才能直接从 A 切换到 B；手工筛选仍然生效
+  const dashboardDataSet = useMemo(
+    () => applyFiltersTree(dataSet, filterTree.filter((node) => node.id !== 'dashboard_cross')),
+    [dataSet, filterTree],
+  );
 
   const [layer, setLayer] = useState<LayerType>('scatter');
   const [selection, setSelection] = useState<Selection>({ rowIds: [] });
@@ -27,6 +38,12 @@ function App() {
   const [showDashboard, setShowDashboard] = useState(false);
   const mapRef = useRef<MapPanelHandle>(null);
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
+
+  // 筛选变化后派生可见选中项，避免地图/表格显示已被过滤的幽灵选中态
+  const visibleSelection = useMemo<Selection>(() => {
+    const visible = new Set(filteredDataSet.rowIds);
+    return { rowIds: selection.rowIds.filter((id) => visible.has(id)) };
+  }, [filteredDataSet.rowIds, selection.rowIds]);
 
   // 数据操作（抽到 hook，模块化）
   const { updateCell, addRow, deleteRows, changeCoordField, addField, deleteField, replaceDataSet } = useDataSetActions(dsState);
@@ -49,6 +66,12 @@ function App() {
       rowRefs.current.get(rowIds[0])?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, []);
+
+  // 仪表盘交叉筛选：同一图表项再次点击即取消；不同图表项替换当前交叉筛选
+  const dashboardCrossFilter = filterTree.find((node) => node.id === 'dashboard_cross');
+  const handleDashboardCrossFilter = useCallback((node: FilterNode | null) => {
+    setFilterTree((tree) => toggleNamedFilter(tree, 'dashboard_cross', node));
+  }, [setFilterTree]);
 
   // 切换字段可见性
   const toggleFieldVisible = useCallback((fieldId: string) => {
@@ -98,9 +121,10 @@ function App() {
   const resetData = useCallback(() => {
     if (!confirm('确认重置为示例数据？当前编辑内容将被覆盖。')) return;
     dsState.reset();
+    resetFilterTree();
     setSelection({ rowIds: [] });
     setLayer('scatter');
-  }, [dsState]);
+  }, [dsState, resetFilterTree]);
 
   const hasKeyConfig = (import.meta.env.VITE_AMAP_KEY as string) || '';
 
@@ -126,25 +150,26 @@ function App() {
       <div className="main-body">
         <MapPanel
           ref={mapRef}
-          dataSet={dataSet}
+          dataSet={filteredDataSet}
           coordField={coordField}
           layer={layer}
           onLayerChange={setLayer}
-          selection={selection}
+          selection={visibleSelection}
           onSelectRows={handleMapSelect}
           onCoordFieldChange={changeCoordField}
         />
 
         <ViewSwitcher
-          dataSet={dataSet}
-          selection={selection}
+          dataSet={filteredDataSet}
+          sourceRowCount={dataSet.rowIds.length}
+          filterTree={filterTree}
+          onFilterTreeChange={setFilterTree}
+          selection={visibleSelection}
           onSelectRows={selectRowsFromTable}
           onUpdateCell={updateCell}
           onAddRow={addRow}
           onDeleteRows={deleteRows}
-          filters={config.filters}
           sorts={config.sorts}
-          onFiltersChange={(f) => setConfig((prev) => ({ ...prev, filters: f }))}
           onSortsChange={(s) => setConfig((prev) => ({ ...prev, sorts: s }))}
           visibleFieldIds={config.visibleFieldIds}
           rowRefs={rowRefs}
@@ -171,7 +196,13 @@ function App() {
 
       {/* 仪表盘面板 */}
       {showDashboard && (
-        <DashboardPanel dataSet={dataSet} coordField={coordField} onClose={() => setShowDashboard(false)} />
+        <DashboardPanel
+          dataSet={dashboardDataSet}
+          coordField={coordField}
+          activeCrossFilter={dashboardCrossFilter}
+          onCrossFilter={handleDashboardCrossFilter}
+          onClose={() => setShowDashboard(false)}
+        />
       )}
     </div>
   );
